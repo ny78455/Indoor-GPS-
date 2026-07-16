@@ -1,0 +1,15 @@
+{
+  "name": "vlcl-digital-twin-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --prefix backend",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "start": "npm run start --prefix backend",
+    "clean": "rm -rf frontend/dist backend/dist"
+  }
+}

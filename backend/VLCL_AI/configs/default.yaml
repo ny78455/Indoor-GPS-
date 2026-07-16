@@ -1,0 +1,88 @@
+room:
+  width: 5.0
+  length: 5.0
+  height: 3.0
+  wall_reflectivity: 0.80
+  floor_reflectivity: 0.20
+  ceiling_reflectivity: 0.50
+
+leds:
+  - id: 1
+    position: [1.25, 1.25, 3]
+    orientation: [0, 0, -1]
+    power: 20.0
+    bias_current: 0.5
+    frequency: 100000.0
+    lambertian_order: 1.0
+    beam_angle: 60.0
+    fov: 60.0
+    communication_enabled: true
+    localization_enabled: true
+  - id: 2
+    position: [3.75, 1.25, 3]
+    orientation: [0, 0, -1]
+    power: 20.0
+    bias_current: 0.5
+    frequency: 150000.0
+    lambertian_order: 1.0
+    beam_angle: 60.0
+    fov: 60.0
+    communication_enabled: true
+    localization_enabled: true
+  - id: 3
+    position: [1.25, 3.75, 3]
+    orientation: [0, 0, -1]
+    power: 20.0
+    bias_current: 0.5
+    frequency: 200000.0
+    lambertian_order: 1.0
+    beam_angle: 60.0
+    fov: 60.0
+    communication_enabled: true
+    localization_enabled: true
+  - id: 4
+    position: [3.75, 3.75, 3]
+    orientation: [0, 0, -1]
+    power: 20.0
+    bias_current: 0.5
+    frequency: 250000.0
+    lambertian_order: 1.0
+    beam_angle: 60.0
+    fov: 60.0
+    communication_enabled: true
+    localization_enabled: true
+
+receiver:
+  position: [3.08, 0.99, 0.85]
+  orientation: [0, 0, 1]
+  velocity: [-0.4994030630120185, 0.024425000598033115, 0]
+  acceleration: [0, 0, 0]
+  fov: 70.0
+  apd_size: 1.0e-4
+  noise: 1.0e-14
+  gain: 1.0
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0
+
+mobility:
+  type: "random_walk"
+  speed: 0.50
+  radius: 1.50
+  center: [2.5, 2.5, 0.85]
+
+obstacles:
+  - id: "obs_human"
+    type: "cylinder"
+    position: [2, 3, 0.9]
+    rotation: [0, 0, 0]
+    scale: [0.3, 0.3, 1.8]
+    reflectivity: 0.3
+    material: "skin_fabric"
+  - id: "obs_desk"
+    type: "box"
+    position: [3.5, 2, 0.4]
+    rotation: [0, 0, 0]
+    scale: [1.2, 0.8, 0.8]
+    reflectivity: 0.4
+    material: "wood"
