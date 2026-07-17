@@ -120,10 +120,12 @@ def run_demo():
             if not blockages_str:
                 blockages_str = "None (Full Clear LOS)"
                 
-            l1_gain = state.distances[1]
-            l1_h = state.dc_gains[1]
-            l2_gain = state.distances[2]
-            l2_h = state.dc_gains[2]
+            # Safely get LED 1 and LED 2 data (handles both integer and string IDs)
+            l1_gain = state.distances.get(1, state.distances.get("1", 0.0))
+            l1_h = state.dc_gains.get(1, state.dc_gains.get("1", 0.0))
+            
+            l2_gain = state.distances.get(2, state.distances.get("2", 0.0))
+            l2_h = state.dc_gains.get(2, state.dc_gains.get("2", 0.0))
             
             table.add_row(
                 str(state.frame_index),

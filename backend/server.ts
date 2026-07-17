@@ -117,10 +117,13 @@ obstacles:
     fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
     
     // Execute python script
-    const venvPythonPath = path.join(BASE_DIR, ".venv", "bin", "python3");
-    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : "python3";
+    const isWin = process.platform === "win32";
+    const venvPythonPath = isWin
+      ? path.join(BASE_DIR, "VLCL_AI", ".venv", "Scripts", "python.exe")
+      : path.join(BASE_DIR, "VLCL_AI", ".venv", "bin", "python3");
+    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
-    exec(`${pythonCmd} "${scriptPath}"`, { cwd: BASE_DIR }, (error, stdout, stderr) => {
+    exec(`${pythonCmd} "${scriptPath}"`, { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } }, (error, stdout, stderr) => {
       res.json({
         success: !error,
         stdout,
@@ -128,6 +131,16 @@ obstacles:
         error: error ? error.message : null
       });
     });
+  });
+
+  // API Route: View 3D Simulation HTML
+  app.get("/api/visualization", (req, res) => {
+    const htmlPath = path.join(BASE_DIR, "VLCL_AI", "logs", "simulation_3d.html");
+    if (fs.existsSync(htmlPath)) {
+      res.sendFile(htmlPath);
+    } else {
+      res.status(404).send("Visualization not found. Run the simulation first.");
+    }
   });
 
   app.get("/api/export-zip", (req, res) => {

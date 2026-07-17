@@ -443,6 +443,51 @@ class Offline3DVisualizer:
         }};
 
         Plotly.newPlot('plot', data, layout);
+
+        // Animate the receiver moving along the trajectory
+        if (traj.length > 1) {{
+            let frameIdx = 0;
+            const rxTraceIdx = data.findIndex(d => d.name === 'APD Receiver');
+            const rxNormalIdx = data.findIndex(d => d.name === 'Rx Normal Vector');
+            
+            setInterval(() => {{
+                frameIdx = (frameIdx + 1) % traj.length;
+                const p = traj[frameIdx];
+                
+                // Update receiver position
+                if (rxTraceIdx >= 0) {{
+                    data[rxTraceIdx].x = [p[0]];
+                    data[rxTraceIdx].y = [p[1]];
+                    data[rxTraceIdx].z = [p[2]];
+                }}
+                
+                // Update normal vector origin
+                if (rxNormalIdx >= 0) {{
+                    const rxDir = state.receiver_orientation;
+                    data[rxNormalIdx].x = [p[0], p[0] + rxDir[0]*0.5];
+                    data[rxNormalIdx].y = [p[1], p[1] + rxDir[1]*0.5];
+                    data[rxNormalIdx].z = [p[2], p[2] + rxDir[2]*0.5];
+                }}
+                
+                // Update optical rays connecting LEDs to the new receiver position
+                data.forEach(trace => {{
+                    if (trace.name && trace.name.startsWith('Ray LED')) {{
+                        trace.x[1] = p[0];
+                        trace.y[1] = p[1];
+                        trace.z[1] = p[2];
+                    }}
+                }});
+                
+                Plotly.react('plot', data, layout);
+                
+                // Update time counter in header
+                const timeElem = document.querySelector('.meta span');
+                if (timeElem) {{
+                    const timePerFrame = 0.05; // 50ms per frame from python simulation
+                    timeElem.innerHTML = (frameIdx * timePerFrame).toFixed(2) + 's';
+                }}
+            }}, 50); // 20 FPS
+        }}
     </script>
 </body>
 </html>

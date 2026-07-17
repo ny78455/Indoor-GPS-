@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;1,14..32,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -6,8 +6,144 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* ─── Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-size: 14px;
+  scroll-behavior: smooth;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Custom Scrollbars ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+/* ─── Range Input Styling ───────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 4px;
+  background: #1e293b;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #22d3ee;
+  box-shadow: 0 0 6px rgba(34,211,238,0.5);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 10px rgba(34,211,238,0.7);
+}
+
+input[type="range"].accent-rose-500::-webkit-slider-thumb {
+  background: #f43f5e;
+  box-shadow: 0 0 6px rgba(244,63,94,0.5);
+}
+
+input[type="range"].accent-rose-500::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 10px rgba(244,63,94,0.7);
+}
+
+/* ─── Animations ────────────────────────────────────────────── */
 @layer utilities {
   .animate-spin-slow {
     animation: spin 12s linear infinite;
   }
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4,0,0.6,1) infinite;
+  }
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* ─── Tooltip ───────────────────────────────────────────────── */
+.tooltip-container { position: relative; }
+.tooltip-content {
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  max-width: 220px;
+  white-space: normal;
+  text-align: left;
+}
+.tooltip-container:hover .tooltip-content { opacity: 1; }
+
+/* ─── Card Glow Effects ─────────────────────────────────────── */
+.card-glow-cyan {
+  box-shadow: 0 0 0 1px rgba(34,211,238,0.08), 0 4px 24px rgba(34,211,238,0.04);
+  transition: box-shadow 0.2s ease;
+}
+.card-glow-cyan:hover {
+  box-shadow: 0 0 0 1px rgba(34,211,238,0.15), 0 8px 32px rgba(34,211,238,0.08);
+}
+
+/* ─── Badge Pulse ───────────────────────────────────────────── */
+.badge-live::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  margin-right: 5px;
+  animation: pulse 1.5s infinite;
+}
+
+/* ─── Section dividers ──────────────────────────────────────── */
+.section-divider {
+  border: none;
+  border-top: 1px solid #1e293b;
+  margin: 0;
 }

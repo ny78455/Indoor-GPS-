@@ -6,6 +6,8 @@ The project has been refactored into a decoupled **monorepo workspace** with iso
 
 ---
 
+![alt text](image.png)
+
 ## 🛠️ System Architecture
 
 The application separates UI representation, network capabilities, and raw physics simulations into modular layers:

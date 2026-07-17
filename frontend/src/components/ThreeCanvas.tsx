@@ -14,78 +14,83 @@ export default function ThreeCanvas({ state }: ThreeCanvasProps) {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
 
-  // Group references to easily update positions
   const rxMeshRef = useRef<THREE.Group | null>(null);
   const rxFovConeRef = useRef<THREE.Mesh | null>(null);
   const ledsGroupRef = useRef<THREE.Group | null>(null);
   const obstaclesGroupRef = useRef<THREE.Group | null>(null);
   const raysGroupRef = useRef<THREE.Group | null>(null);
   const trajectoryLineRef = useRef<THREE.Line | null>(null);
-  const roomGridRef = useRef<THREE.LineSegments | null>(null);
+  const roomGroupRef = useRef<THREE.Group | null>(null);
 
-  // 1. Initial Scene Setup
+  // ─── 1. Initial Scene Setup (runs once) ─────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 600;
 
-    const width = containerRef.current.clientWidth;
-    const height = containerRef.current.clientHeight;
-
-    // Create scene with a dark tech theme background
+    // Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0f1d);
+    scene.background = new THREE.Color(0x080d1a);
     sceneRef.current = scene;
 
     // Camera
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 50);
-    // Position camera looking down into the room
-    camera.position.set(state.room.width * 1.5, state.room.height * 1.8, state.room.length * 1.5);
+    const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 100);
+    camera.position.set(10, 9, 10);
     cameraRef.current = camera;
 
-    // Renderer with antialiasing
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    containerRef.current.appendChild(renderer.domElement);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Controls
+    // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI / 2 - 0.01; // Don't go below floor
-    controls.minDistance = 2;
-    controls.maxDistance = 25;
-    controls.target.set(state.room.width / 2, state.room.height / 3, state.room.length / 2);
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 3;
+    controls.maxDistance = 30;
+    controls.target.set(2.5, 1.5, 2.5);
     controls.update();
     controlsRef.current = controls;
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
-    scene.add(ambientLight);
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+    dir.position.set(8, 12, 8);
+    dir.castShadow = true;
+    scene.add(dir);
+    const fill = new THREE.DirectionalLight(0x3a8bff, 0.25);
+    fill.position.set(-5, 4, -5);
+    scene.add(fill);
 
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
-    dirLight1.position.set(10, 15, 10);
-    scene.add(dirLight1);
+    // Floor plane
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(50, 50),
+      new THREE.MeshStandardMaterial({ color: 0x0e1929, roughness: 0.9, metalness: 0.0 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
 
-    const dirLight2 = new THREE.DirectionalLight(0x58a6ff, 0.2);
-    dirLight2.position.set(-10, 5, -10);
-    scene.add(dirLight2);
-
-    // Helpers
-    // 3D Grid floor
-    const gridHelper = new THREE.GridHelper(20, 20, 0x30363d, 0x1f242c);
-    gridHelper.position.set(5, 0, 5);
+    // Grid
+    const gridHelper = new THREE.GridHelper(50, 100, 0x1a2744, 0x111a2e);
+    gridHelper.position.y = 0.001;
     scene.add(gridHelper);
 
-    // 3D Coordinate Axes at origin (0, 0, 0)
-    // Red: X, Green: Y, Blue: Z
-    const axesHelper = new THREE.AxesHelper(1.5);
-    axesHelper.position.set(0.01, 0.01, 0.01);
-    // Make axes thicker
-    (axesHelper.material as THREE.Material).depthWrite = true;
+    // Axes
+    const axesHelper = new THREE.AxesHelper(0.8);
+    axesHelper.position.set(0.1, 0.01, 0.1);
     scene.add(axesHelper);
 
-    // Groups for active entities
+    // Groups
+    const roomGroup = new THREE.Group();
+    scene.add(roomGroup);
+    roomGroupRef.current = roomGroup;
+
     const ledsGroup = new THREE.Group();
     scene.add(ledsGroup);
     ledsGroupRef.current = ledsGroup;
@@ -98,361 +103,352 @@ export default function ThreeCanvas({ state }: ThreeCanvasProps) {
     scene.add(raysGroup);
     raysGroupRef.current = raysGroup;
 
-    // Add Receiver model
+    // ── Receiver model ──────────────────────────────────────────────────
     const rxGroup = new THREE.Group();
-    
-    // Photodiode base block
-    const baseGeo = new THREE.CylinderGeometry(0.12, 0.15, 0.08, 16);
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x388bfd, metalness: 0.8, roughness: 0.2 });
-    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-    baseMesh.position.y = 0.04;
+
+    // Metallic base disc
+    const baseMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.16, 0.07, 20),
+      new THREE.MeshStandardMaterial({ color: 0x1d6ae5, metalness: 0.85, roughness: 0.15 })
+    );
+    baseMesh.position.y = 0.035;
     rxGroup.add(baseMesh);
 
-    // Active APD circular sensor surface (glowing cyan)
-    const pdGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.01, 16);
-    const pdMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff });
-    const pdMesh = new THREE.Mesh(pdGeo, pdMat);
-    pdMesh.position.y = 0.085;
+    // APD sensor surface glow
+    const pdMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.075, 0.075, 0.015, 20),
+      new THREE.MeshBasicMaterial({ color: 0x58d6ff })
+    );
+    pdMesh.position.y = 0.08;
     rxGroup.add(pdMesh);
 
-    // Dynamic orientation vector indicator (thick pin)
-    const arrowGeo = new THREE.ConeGeometry(0.04, 0.15, 8);
-    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffe27e });
-    const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
-    arrowMesh.position.y = 0.2;
-    arrowMesh.rotation.x = 0; // points up along local Y
+    // Orientation pointer (cone pointing up)
+    const arrowMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.04, 0.18, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffd966 })
+    );
+    arrowMesh.position.y = 0.26;
     rxGroup.add(arrowMesh);
 
     scene.add(rxGroup);
     rxMeshRef.current = rxGroup;
 
-    // Add Receiver FOV cone (translucent, pointer aligned)
-    // Re-create dynamically with correct FOV size
-    const fovRadius = 1.0 * Math.tan((state.receiver.fov * Math.PI) / 180);
-    const fovConeGeo = new THREE.ConeGeometry(fovRadius, 1.0, 32, 1, true); // open ended
-    // Rotate cone geometry so it points in the correct alignment direction
-    fovConeGeo.translate(0, 0.5, 0); // shift origin to apex
-    fovConeGeo.rotateX(Math.PI); // flip upside down so apex is at bottom
-    const fovConeMat = new THREE.MeshBasicMaterial({
-      color: 0x58a6ff,
-      transparent: true,
-      opacity: 0.12,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    const fovCone = new THREE.Mesh(fovConeGeo, fovConeMat);
+    // FOV cone (opens upward from receiver top)
+    const fovRad = 1.0 * Math.tan(((state.receiver.fov / 2) * Math.PI) / 180);
+    const fovGeo = new THREE.ConeGeometry(fovRad, 1.0, 32, 1, true);
+    fovGeo.translate(0, 0.5, 0);
+    const fovCone = new THREE.Mesh(
+      fovGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0x58d6ff, transparent: true, opacity: 0.1,
+        side: THREE.DoubleSide, depthWrite: false
+      })
+    );
     rxGroup.add(fovCone);
     rxFovConeRef.current = fovCone;
 
-    // Add Trajectory line
-    const trajGeo = new THREE.BufferGeometry();
-    const trajMat = new THREE.LineBasicMaterial({ color: 0x2ea44f, linewidth: 2 });
-    const trajLine = new THREE.Line(trajGeo, trajMat);
+    // Trajectory line
+    const trajLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x2ea44f, linewidth: 2 })
+    );
     scene.add(trajLine);
     trajectoryLineRef.current = trajLine;
 
-    // Handle container resize
-    const handleResize = () => {
-      if (!containerRef.current || !rendererRef.current || !cameraRef.current) return;
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
+    // Resize handler
+    const onResize = () => {
+      if (!container || !rendererRef.current || !cameraRef.current) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
       cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
     };
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", onResize);
 
-    // Animation Loop
-    let animationFrameId: number;
+    // Render loop
+    let animId: number;
     const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      if (controlsRef.current) controlsRef.current.update();
-      if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        rendererRef.current.render(sceneRef.current, cameraRef.current);
-      }
+      animId = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
     };
     animate();
 
     return () => {
-      window.removeEventListener("resize", handleResize);
-      cancelAnimationFrame(animationFrameId);
-      if (rendererRef.current && containerRef.current) {
-        rendererRef.current.dispose();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        containerRef.current.removeChild(renderer.domElement);
+      window.removeEventListener("resize", onResize);
+      cancelAnimationFrame(animId);
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Room boundaries update
+  // ─── 2. Room Wireframe ───────────────────────────────────────────────────
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
+    const group = roomGroupRef.current;
+    if (!group) return;
 
-    // Remove old room wireframe
-    if (roomGridRef.current) {
-      scene.remove(roomGridRef.current);
-    }
+    while (group.children.length > 0) group.remove(group.children[0]);
 
     const { width, length, height } = state.room;
 
-    // Room outer wireframe box
-    const boxGeo = new THREE.BoxGeometry(width, height, length);
-    const edges = new THREE.EdgesGeometry(boxGeo);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x30363d, linewidth: 2 });
-    const roomWireframe = new THREE.LineSegments(edges, lineMat);
-    
-    // Position wireframe center
-    roomWireframe.position.set(width / 2, height / 2, length / 2);
-    scene.add(roomWireframe);
-    roomGridRef.current = roomWireframe;
+    // Bright blue room edge wireframe — defines the room shape clearly
+    const w = width, l = length, h = height;
+    const pts: number[] = [
+      // Bottom face
+      0,0,0, w,0,0,  w,0,0, w,0,l,  w,0,l, 0,0,l,  0,0,l, 0,0,0,
+      // Top face
+      0,h,0, w,h,0,  w,h,0, w,h,l,  w,h,l, 0,h,l,  0,h,l, 0,h,0,
+      // Vertical edges
+      0,0,0, 0,h,0,  w,0,0, w,h,0,  w,0,l, w,h,l,  0,0,l, 0,h,l,
+    ];
+    const wallGeo = new THREE.BufferGeometry();
+    wallGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts), 3));
+    const roomEdges = new THREE.LineSegments(wallGeo, new THREE.LineBasicMaterial({ color: 0x2563eb }));
+    group.add(roomEdges);
 
-    // Adjust camera look-at targets if room size changes drastically
-    if (controlsRef.current) {
-      controlsRef.current.target.set(width / 2, height / 3, length / 2);
-    }
+    // Corner pillars
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1d3461, metalness: 0.4, roughness: 0.6 });
+    [[0, 0], [w, 0], [0, l], [w, l]].forEach(([px, pz]) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, h, 8), pillarMat);
+      pillar.position.set(px, h / 2, pz);
+      group.add(pillar);
+    });
+
+    // Ceiling panel (semi-transparent)
+    const ceil = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, l),
+      new THREE.MeshStandardMaterial({ color: 0x1a2744, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false })
+    );
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.set(w / 2, h, l / 2);
+    group.add(ceil);
+
+    // Translucent wall panels
+    const wallAlpha = 0.045;
+    const wallColor = 0x1e3a6e;
+    const wallConfigs: { w: number; h: number; pos: [number, number, number]; ry: number }[] = [
+      { w, h, pos: [w / 2, h / 2, 0],   ry: 0 },
+      { w, h, pos: [w / 2, h / 2, l],   ry: Math.PI },
+      { w: l, h, pos: [0,   h / 2, l / 2], ry: Math.PI / 2 },
+      { w: l, h, pos: [w,   h / 2, l / 2], ry: -Math.PI / 2 },
+    ];
+    wallConfigs.forEach(({ w: pw, h: ph, pos, ry }) => {
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(pw, ph),
+        new THREE.MeshBasicMaterial({ color: wallColor, transparent: true, opacity: wallAlpha, side: THREE.DoubleSide, depthWrite: false })
+      );
+      mesh.position.set(...pos);
+      mesh.rotation.y = ry;
+      group.add(mesh);
+    });
+
+    // Update camera look-at
+    if (controlsRef.current) controlsRef.current.target.set(w / 2, h / 3, l / 2);
+    if (cameraRef.current)   cameraRef.current.position.set(w * 2.0, h * 2.2, l * 2.0);
   }, [state.room]);
 
-  // 3. Obstacles rebuild
+  // ─── 3. Obstacles ────────────────────────────────────────────────────────
   useEffect(() => {
     const group = obstaclesGroupRef.current;
     if (!group) return;
-
-    // Clear old
-    while (group.children.length > 0) {
-      group.remove(group.children[0]);
-    }
+    while (group.children.length > 0) group.remove(group.children[0]);
 
     state.obstacles.forEach((obs) => {
-      let geo: THREE.BufferGeometry;
       const mat = new THREE.MeshStandardMaterial({
-        color: 0xda3637, // crimson/red
-        transparent: true,
-        opacity: 0.6,
-        roughness: 0.5,
-        metalness: 0.2
+        color: 0xc0392b, transparent: true, opacity: 0.7,
+        roughness: 0.5, metalness: 0.1
       });
 
+      let geo: THREE.BufferGeometry;
       if (obs.type === "sphere") {
         geo = new THREE.SphereGeometry(obs.scale[0], 24, 24);
       } else if (obs.type === "cylinder") {
-        // scale: [radius, radius, height]
         geo = new THREE.CylinderGeometry(obs.scale[0], obs.scale[0], obs.scale[2], 24);
       } else {
-        // box scale: [dx, dy, dz]
-        geo = new THREE.BoxGeometry(obs.scale[0], obs.scale[2], obs.scale[1]); // height is z in python, y in three
+        // Python scale [dx, dy, dz], Z is up -> Three.js Y up
+        geo = new THREE.BoxGeometry(obs.scale[0], obs.scale[2], obs.scale[1]);
       }
 
       const mesh = new THREE.Mesh(geo, mat);
-      
-      // Position
-      // Note: In Python, Z is up. In Three.js, Y is up.
-      // Python coordinates: [x, y, z] -> Three.js coordinates: [x, z, y]
-      // Wait, let's map: Three.js [x, y, z] to Python [x, z, y] or keep it consistent:
-      // Let's map Python Z to Three.js Y, and Python Y to Three.js Z.
+      // Python pos [x, y, z_height] => Three.js [x, z_height, y]
       mesh.position.set(obs.position[0], obs.position[2], obs.position[1]);
-      
-      // Rotation
       mesh.rotation.set(
         THREE.MathUtils.degToRad(obs.rotation[0]),
-        THREE.MathUtils.degToRad(obs.rotation[2]), // yaw around vertical
+        THREE.MathUtils.degToRad(obs.rotation[2]),
         THREE.MathUtils.degToRad(obs.rotation[1])
       );
-
+      mesh.castShadow = true;
       group.add(mesh);
+
+      // Wireframe overlay
+      const edges = new THREE.EdgesGeometry(geo);
+      const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff4444 }));
+      wire.position.copy(mesh.position);
+      wire.rotation.copy(mesh.rotation);
+      group.add(wire);
     });
   }, [state.obstacles]);
 
-  // 4. LEDs rebuild (and FOV Cones)
+  // ─── 4. LEDs + Emission Cones ────────────────────────────────────────────
   useEffect(() => {
     const group = ledsGroupRef.current;
     if (!group) return;
+    while (group.children.length > 0) group.remove(group.children[0]);
 
-    // Clear old
-    while (group.children.length > 0) {
-      group.remove(group.children[0]);
-    }
+    const ledColors = [0xfde68a, 0x67e8f9, 0xa78bfa, 0x6ee7b7];
 
-    state.leds.forEach((led) => {
+    state.leds.forEach((led, i) => {
+      // Python [x, y, z_height] => Three.js [x, z_height, y]
       const ledGroup = new THREE.Group();
       ledGroup.position.set(led.position[0], led.position[2], led.position[1]);
 
-      // LED physical light fixture (gray disc)
-      const fixtureGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16);
-      const fixtureMat = new THREE.MeshStandardMaterial({ color: 0x484f58, metalness: 0.8 });
-      const fixture = new THREE.Mesh(fixtureGeo, fixtureMat);
-      fixture.rotation.x = Math.PI / 2; // face down
+      const bulbColor = ledColors[i % ledColors.length];
+
+      // Housing disc on ceiling
+      const fixture = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.14, 0.05, 20),
+        new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.7, roughness: 0.3 })
+      );
       ledGroup.add(fixture);
 
-      // LED active emitter (bright yellow glow sphere)
-      const bulbGeo = new THREE.SphereGeometry(0.06, 12, 12);
-      const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe27e });
-      const bulb = new THREE.Mesh(bulbGeo, bulbMat);
-      bulb.position.y = -0.02;
+      // Emitter glow bulb (just below disc)
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.065, 14, 14),
+        new THREE.MeshBasicMaterial({ color: bulbColor })
+      );
+      bulb.position.y = -0.05;
       ledGroup.add(bulb);
 
-      // LED emission cone
-      // Light cones spread downwards. Apex is at LED position (0, 0, 0 in group).
-      // Height of room is 3m, let's draw cone to the floor (height of led is ledGroup.position.y)
-      const coneHeight = led.position[2]; // down to Z=0
-      const coneRadius = coneHeight * Math.tan((led.fov / 2 * Math.PI) / 180);
-      const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 32, 1, true);
-      coneGeo.translate(0, -coneHeight / 2, 0); // shift origin to apex
-      coneGeo.rotateX(Math.PI); // point downwards
+      // Point light
+      const pt = new THREE.PointLight(bulbColor, 0.45, 4.5);
+      pt.position.y = -0.05;
+      ledGroup.add(pt);
 
-      // Light color: communication is yellow, localization is blue/cyan
-      const color = led.id % 2 === 0 ? 0xffe27e : 0x58a6ff;
-      const coneMat = new THREE.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: 0.05,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      });
-      const cone = new THREE.Mesh(coneGeo, coneMat);
-      ledGroup.add(cone);
+      // Downward emission cone (apex at LED, base at floor)
+      const coneHeight = led.position[2]; // height above floor (Three.js Y)
+      if (coneHeight > 0.1) {
+        const halfAngleRad = (led.fov / 2 * Math.PI) / 180;
+        const coneRadius = coneHeight * Math.tan(halfAngleRad);
+
+        // ConeGeometry default: axis along +Y, apex at +Y/2, base at -Y/2
+        // We want apex at top (y=0) and base pointing down (y=-coneHeight)
+        const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 32, 1, true);
+        // After this translate, apex is at (0,0) and base center is at (0,-coneHeight)
+        coneGeo.translate(0, -coneHeight / 2, 0);
+
+        const cone = new THREE.Mesh(
+          coneGeo,
+          new THREE.MeshBasicMaterial({
+            color: bulbColor, transparent: true, opacity: 0.07,
+            side: THREE.DoubleSide, depthWrite: false
+          })
+        );
+        ledGroup.add(cone);
+
+        // Floor footprint ring
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(coneRadius - 0.02, coneRadius + 0.02, 48),
+          new THREE.MeshBasicMaterial({ color: bulbColor, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = -coneHeight + 0.005;
+        ledGroup.add(ring);
+      }
 
       group.add(ledGroup);
     });
   }, [state.leds]);
 
-  // 5. Dynamic Frame updates (Receiver Position, Orientation, Trajectory, and Rays)
+  // ─── 5. Dynamic Frame Updates (Receiver + Rays + Trajectory) ─────────────
   useEffect(() => {
-    // 5.1. Update Receiver position & orientation
+    // 5.1 Receiver
     const rxGroup = rxMeshRef.current;
     if (rxGroup) {
-      // Map Python [x, y, z] -> Three.js [x, z, y]
-      // Wait, Z is height in python, so it goes to Three.js Y.
-      // Y is length in python, so it goes to Three.js Z.
-      const rxX = state.receiver.position[0];
-      const rxY = state.receiver.position[2]; // height
-      const rxZ = state.receiver.position[1]; // length
-      rxGroup.position.set(rxX, rxY, rxZ);
-
-      // Rotate receiver group according to roll, pitch, yaw
+      // Python pos [x, y, z] where z=height => Three.js [x, z_height, y]
+      rxGroup.position.set(
+        state.receiver.position[0],
+        state.receiver.position[2],
+        state.receiver.position[1]
+      );
       rxGroup.rotation.set(
         THREE.MathUtils.degToRad(state.receiver.roll),
         THREE.MathUtils.degToRad(state.receiver.yaw),
         THREE.MathUtils.degToRad(state.receiver.pitch)
       );
 
-      // Adjust Receiver FOV cone orientation (which is inside rxGroup, so it inherits rotation)
-      // If we want to change FOV angle in real time:
       const fovCone = rxFovConeRef.current;
       if (fovCone) {
-        const currentRadius = 1.2 * Math.tan(((state.receiver.fov / 2) * Math.PI) / 180);
-        fovCone.scale.set(currentRadius, 1.2, currentRadius);
+        const r = 1.2 * Math.tan(((state.receiver.fov / 2) * Math.PI) / 180);
+        fovCone.scale.set(r, 1.2, r);
       }
     }
 
-    // 5.2. Update Trajectory Line
+    // 5.2 Trajectory
     const trajLine = trajectoryLineRef.current;
     if (trajLine && state.trajectoryPoints.length > 1) {
-      const points: THREE.Vector3[] = [];
-      state.trajectoryPoints.forEach((pt) => {
-        points.push(new THREE.Vector3(pt[0], pt[2], pt[1])); // mapping X, Z, Y
-      });
-      trajLine.geometry.setFromPoints(points);
+      const pts = state.trajectoryPoints.map(
+        (pt) => new THREE.Vector3(pt[0], pt[2], pt[1])
+      );
+      trajLine.geometry.setFromPoints(pts);
       trajLine.geometry.computeBoundingSphere();
     }
 
-    // 5.3. Update Optical Rays (LOS vs Blocked)
+    // 5.3 Optical Rays
     const raysGroup = raysGroupRef.current;
     if (raysGroup) {
-      // Clear old rays
-      while (raysGroup.children.length > 0) {
-        raysGroup.remove(raysGroup.children[0]);
-      }
+      while (raysGroup.children.length > 0) raysGroup.remove(raysGroup.children[0]);
+
+      const rxPos = new THREE.Vector3(
+        state.receiver.position[0],
+        state.receiver.position[2],
+        state.receiver.position[1]
+      );
 
       state.leds.forEach((led) => {
         const isLos = state.losMatrix[led.id];
-        const isFov = state.visibilityMatrix[led.id];
-        const blockingObs = state.blockingObstacles[led.id];
+        const inFov = state.visibilityMatrix[led.id];
+        const ledPos = new THREE.Vector3(led.position[0], led.position[2], led.position[1]);
 
-        // Draw line from LED position to Receiver position
-        const pLed = new THREE.Vector3(led.position[0], led.position[2], led.position[1]);
-        const pRx = new THREE.Vector3(state.receiver.position[0], state.receiver.position[2], state.receiver.position[1]);
+        let rayColor: number;
+        if (!isLos) rayColor = 0xe53e3e;
+        else if (inFov) rayColor = 0x22c55e;
+        else rayColor = 0x64748b;
 
-        let rayColor = 0xda3637; // Default blocked is red
-        if (isLos) {
-          rayColor = isFov ? 0x2ea44f : 0x8b949e; // Green if full LOS & active, grey if out of FOV
-        }
+        const rayGeo = new THREE.BufferGeometry().setFromPoints([ledPos, rxPos]);
 
-        const points = [pLed, pRx];
-        const rayGeo = new THREE.BufferGeometry().setFromPoints(points);
-        
-        let rayMat: THREE.Material;
+        let ray: THREE.Line;
         if (!isLos) {
-          // Draw dashed line for blocked paths
-          rayMat = new THREE.LineDashedMaterial({
-            color: rayColor,
-            dashSize: 0.1,
-            gapSize: 0.08,
-            linewidth: 1.5
-          });
+          const mat = new THREE.LineDashedMaterial({ color: rayColor, dashSize: 0.12, gapSize: 0.08 });
+          ray = new THREE.Line(rayGeo, mat);
+          ray.computeLineDistances();
         } else {
-          rayMat = new THREE.LineBasicMaterial({
-            color: rayColor,
-            linewidth: isFov ? 2.5 : 1
-          });
+          ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: rayColor }));
         }
-
-        const ray = new THREE.Line(rayGeo, rayMat);
-        if (!isLos) ray.computeLineDistances(); // Required for dashed lines
-
         raysGroup.add(ray);
-
-        // Optional: Draw a tiny visual marker on the blocking obstacle intersection
-        if (!isLos && blockingObs) {
-          const obs = state.obstacles.find(o => o.id === blockingObs);
-          if (obs) {
-            // Draw a tiny red intersection point near the obstacle
-            const interGeo = new THREE.SphereGeometry(0.03, 8, 8);
-            const interMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const interMesh = new THREE.Mesh(interGeo, interMat);
-            // Midpoint approximation
-            interMesh.position.copy(pLed).add(pRx).multiplyScalar(0.5);
-            raysGroup.add(interMesh);
-          }
-        }
       });
     }
   }, [state.receiver, state.trajectoryPoints, state.leds, state.losMatrix, state.visibilityMatrix, state.blockingObstacles, state.obstacles]);
 
   return (
-    <div id="three-canvas-container" className="relative w-full h-full rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+    <div
+      id="three-canvas-container"
+      className="relative w-full h-full rounded-xl overflow-hidden"
+      style={{ background: "radial-gradient(ellipse at 50% 80%, #0d1b3e 0%, #080d1a 100%)" }}
+    >
       <div ref={containerRef} className="w-full h-full" />
-      
-      {/* Visual legends overlay */}
-      <div className="absolute top-4 left-4 p-3 rounded-lg bg-slate-900/95 border border-slate-800/80 backdrop-blur-sm shadow-xl flex flex-col gap-2 text-xs text-slate-300 pointer-events-none select-none">
-        <h4 className="font-semibold text-slate-200 border-b border-slate-800 pb-1 mb-1 flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-          3D Visual Legend
-        </h4>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-0.5 bg-green-500 rounded"></span>
-          <span>Line-of-Sight (LOS) Ray</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-0.5 border-t border-dashed border-red-500"></span>
-          <span>Blocked Ray (NLOS)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 bg-yellow-400/20 rounded-full border border-yellow-400/40"></span>
-          <span>Comm LED Cone</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 bg-cyan-400/20 rounded-full border border-cyan-400/40"></span>
-          <span>Loc LED Cone</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 bg-blue-500/20 rounded-full border border-blue-500/50"></span>
-          <span>Receiver FOV Cone</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 bg-red-600/50 rounded border border-red-500"></span>
-          <span>Obstacle Blockers</span>
-        </div>
+      <div className="absolute top-3 left-3 text-[10px] font-mono text-blue-400/60 select-none pointer-events-none">
+        VLCL · 3D Digital Twin
+      </div>
+      <div className="absolute top-3 right-3 text-[10px] font-mono text-slate-500 select-none pointer-events-none">
+        Drag to orbit · Scroll to zoom
+      </div>
+      <div className="absolute bottom-3 right-3 flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 select-none pointer-events-none">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        LIVE
       </div>
     </div>
   );
