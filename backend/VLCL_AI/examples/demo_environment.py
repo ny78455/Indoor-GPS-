@@ -103,8 +103,8 @@ def run_demo():
     table.add_column("Frame", justify="center", style="cyan")
     table.add_column("Sim Time (s)", justify="center", style="magenta")
     table.add_column("Rx Position (X, Y, Z)", style="green")
-    table.add_column("LED 1 Dist / Gain", style="yellow")
-    table.add_column("LED 2 Dist / Gain", style="yellow")
+    table.add_column("LED 1 SNR/Pwr", style="yellow")
+    table.add_column("LED 2 SNR/Pwr", style="yellow")
     table.add_column("LOS Blockages", style="red")
     
     for frame in range(1, total_frames + 1):
@@ -120,19 +120,19 @@ def run_demo():
             if not blockages_str:
                 blockages_str = "None (Full Clear LOS)"
                 
-            # Safely get LED 1 and LED 2 data (handles both integer and string IDs)
-            l1_gain = state.distances.get(1, state.distances.get("1", 0.0))
-            l1_h = state.dc_gains.get(1, state.dc_gains.get("1", 0.0))
+            # Safely get LED 1 and LED 2 data (handles both integer and string IDs) from physics state
+            l1_snr = state.physics.get("snrs", {}).get(1, state.physics.get("snrs", {}).get("1", 0.0))
+            l1_pwr = state.physics.get("received_powers", {}).get(1, state.physics.get("received_powers", {}).get("1", 0.0))
             
-            l2_gain = state.distances.get(2, state.distances.get("2", 0.0))
-            l2_h = state.dc_gains.get(2, state.dc_gains.get("2", 0.0))
+            l2_snr = state.physics.get("snrs", {}).get(2, state.physics.get("snrs", {}).get("2", 0.0))
+            l2_pwr = state.physics.get("received_powers", {}).get(2, state.physics.get("received_powers", {}).get("2", 0.0))
             
             table.add_row(
                 str(state.frame_index),
                 f"{state.current_time:.2f}",
                 f"[{state.receiver_position[0]:.2f}, {state.receiver_position[1]:.2f}, {state.receiver_position[2]:.2f}]",
-                f"{l1_gain:.2f}m / {l1_h:.1e}",
-                f"{l2_gain:.2f}m / {l2_h:.1e}",
+                f"{l1_snr:.1f}dB / {l1_pwr:.1e}W",
+                f"{l2_snr:.1f}dB / {l2_pwr:.1e}W",
                 blockages_str
             )
             

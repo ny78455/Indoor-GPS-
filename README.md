@@ -159,13 +159,127 @@ npm run build
 
 ---
 
-## 📁 Key File Map
+## 📁 Project Directory Structure
 
-* `frontend/src/App.tsx`: Main React page containing Three.js scene setup and API event handlers.
-* `frontend/vite.config.ts`: Proxy settings and development configurations.
-* `backend/server.ts`: Express application handling HTTP routing and python subprocesses.
-* `backend/VLCL_AI/examples/demo_environment.py`: Executable Python entry script running the timeline loop.
-* `backend/VLCL_AI/environment/config.py`: Loads and parses `default.yaml` into structured configurations with decimal notations.
-* `backend/VLCL_AI/environment/geometry.py`: Physics vector computations and Lambertian gain math.
-* `backend/VLCL_AI/environment/obstacle.py`: Ray-tracing mathematical obstacle intersection logic.
-* `backend/VLCL_AI/environment/receiver.py`: Noise computations and movement calculations.
+```text
+.
+├── .env.example
+├── .gitignore
+├── bun.lock
+├── image.png
+├── metadata.json
+├── package-lock.json
+├── package.json
+├── README.md
+├── backend/
+│   ├── package.json
+│   ├── server.ts
+│   ├── tsconfig.json
+│   └── VLCL_AI/
+│       ├── main.py
+│       ├── README.md
+│       ├── requirements.txt
+│       ├── configs/
+│       │   └── default.yaml
+│       ├── environment/
+│       │   ├── config.py
+│       │   ├── coordinate_system.py
+│       │   ├── geometry.py
+│       │   ├── led.py
+│       │   ├── mobility.py
+│       │   ├── obstacle.py
+│       │   ├── receiver.py
+│       │   ├── room.py
+│       │   ├── scene.py
+│       │   ├── simulator.py
+│       │   ├── state.py
+│       │   ├── visualization.py
+│       │   └── __init__.py
+│       ├── examples/
+│       │   ├── demo_environment.py
+│       │   └── __init__.py
+│       ├── logs/
+│       │   └── simulation_3d.html
+│       └── tests/
+│           ├── test_simulation.py
+│           └── __init__.py
+└── frontend/
+    ├── index.html
+    ├── package.json
+    ├── tsconfig.json
+    ├── vite.config.ts
+    └── src/
+        ├── App.tsx
+        ├── index.css
+        ├── main.tsx
+        ├── types.ts
+        └── components/
+            ├── CodeViewer.tsx
+            ├── ControlPanel.tsx
+            ├── DebugOverlay.tsx
+            ├── FormulaPanel.tsx
+            ├── IllustrationPanel.tsx
+            └── ThreeCanvas.tsx
+```
+
+### Detailed File Descriptions
+
+#### Root Directory
+* `.env.example`: Environment variables template indicating required configurations.
+* `.gitignore`: Specifies intentionally untracked files to ignore for Git version control.
+* `bun.lock`: Dependency lock file for the Bun package manager.
+* `image.png`: Preview image for the README.
+* `metadata.json`: Project metadata and configuration details.
+* `package-lock.json`: Dependency lock file for NPM.
+* `package.json`: Main workspace package configuration containing scripts for both frontend and backend (`npm run dev`, `npm run build`, etc.).
+* `README.md`: Comprehensive project documentation file (this file).
+
+#### Backend (`/backend`)
+* `package.json`: Node dependencies specific to the Express backend.
+* `server.ts`: Express application handling HTTP routing, serving static files, and managing Python engine subprocesses.
+* `tsconfig.json`: TypeScript configuration for the backend.
+* `VLCL_AI/`: Core Simulation AI Engine written in Python.
+  * `main.py`: Entry point for executing the simulation engine manually.
+  * `README.md`: Documentation specific to the VLCL AI engine logic and execution.
+  * `requirements.txt`: Python dependencies (NumPy, SciPy, Loguru, Rich, Plotly).
+  * `configs/default.yaml`: Default configuration presets for the environment, LEDs, and receiver attributes.
+  * `environment/`: Core simulation modules for the physics engine.
+    * `config.py`: Loads and parses `default.yaml` into structured configurations with decimal notations.
+    * `coordinate_system.py`: Manages the 3D coordinate logic and mapping.
+    * `geometry.py`: Physics vector computations and Lambertian gain math.
+    * `led.py`: Defines the LED transmitter behavior, power output, and Lambertian emission logic.
+    * `mobility.py`: Handles mobility patterns and movement vectors for the receiver.
+    * `obstacle.py`: Ray-tracing mathematical obstacle intersection logic for blocking Line-Of-Sight (LOS).
+    * `receiver.py`: Noise computations, gain calculation, and Signal-to-Noise Ratio (SNR) evaluation.
+    * `room.py`: Defines the physical dimensions and reflection properties of the simulated room.
+    * `scene.py`: Manages the aggregate simulation scene, including walls, LEDs, obstacles, and receivers.
+    * `simulator.py`: Coordinates the stepping and execution of the simulation timeline sequence.
+    * `state.py`: Defines data structures to track the simulation state across time.
+    * `visualization.py`: 3D plotting and output generation for assets (e.g., Plotly HTML).
+    * `__init__.py`: Module initializer for the environment package.
+  * `examples/`: Example simulation scripts.
+    * `demo_environment.py`: Executable Python entry script running the timeline loop for a sample space.
+    * `__init__.py`: Module initializer.
+  * `logs/`: Directory for output logs and generated artifacts.
+    * `simulation_3d.html`: Pre-generated interactive 3D plot of the simulation environment.
+  * `tests/`: Unit tests for the simulation engine.
+    * `test_simulation.py`: Test suite validating simulation mechanics, ray-tracing, and mathematical calculations.
+    * `__init__.py`: Module initializer.
+
+#### Frontend (`/frontend`)
+* `index.html`: Main HTML entry point for the Vite/React application.
+* `package.json`: Node dependencies specific to the frontend application.
+* `tsconfig.json`: TypeScript configuration for the frontend React app.
+* `vite.config.ts`: Proxy settings (e.g., routing `/api` to backend) and Vite development configurations.
+* `src/`: Source code for the React UI.
+  * `App.tsx`: Main React application component handling state, layout, and top-level API event handlers.
+  * `index.css`: Global stylesheet incorporating TailwindCSS utilities.
+  * `main.tsx`: React DOM rendering entry point.
+  * `types.ts`: TypeScript interface definitions corresponding to the frontend models and backend API structures.
+  * `components/`: Reusable React components that make up the UI.
+    * `CodeViewer.tsx`: Displays raw code or configuration files with syntax highlighting.
+    * `ControlPanel.tsx`: UI panel for toggling simulation parameters, editing values, and triggering runs.
+    * `DebugOverlay.tsx`: Displays real-time logs and debug information in a retro-monospace console.
+    * `FormulaPanel.tsx`: Educational component presenting mathematical equations related to VLCL.
+    * `IllustrationPanel.tsx`: Renders visual diagrams and graphical explanations for VLCL concepts.
+    * `ThreeCanvas.tsx`: Contains the Three.js scene setup for the interactive 3D digital laboratory rendering.

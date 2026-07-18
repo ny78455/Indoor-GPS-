@@ -53,11 +53,11 @@ leds:
     localization_enabled: true
 
 receiver:
-  position: [4.17, 1.20, 0.85]
+  position: [1.04, 2.83, 0.85]
   orientation: [0, 0, 1]
-  velocity: [0.39090922203085265, 0.08479375054350151, 0]
+  velocity: [-0.11151710700477577, -0.4874053085936646, 0]
   acceleration: [0, 0, 0]
-  fov: 68.0
+  fov: 70.0
   apd_size: 1.0e-4
   noise: 1.0e-14
   gain: 1.0
@@ -66,15 +66,15 @@ receiver:
   yaw: 0.0
 
 mobility:
-  type: "random_walk"
-  speed: 0.40
+  type: "circular"
+  speed: 0.50
   radius: 1.50
   center: [2.5, 2.5, 0.85]
 
 obstacles:
   - id: "obs_human"
     type: "cylinder"
-    position: [2, 3.3, 0.9]
+    position: [2, 3, 0.9]
     rotation: [0, 0, 0]
     scale: [0.3, 0.3, 1.8]
     reflectivity: 0.3

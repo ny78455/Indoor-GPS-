@@ -37,6 +37,9 @@ class EnvironmentState:
     
     # Obstacles
     obstacles: List[Dict[str, Any]]
+    
+    # Physics Engine Data
+    physics: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts state to standard dictionary (serializable to JSON/YAML)."""
@@ -65,5 +68,6 @@ class EnvironmentState:
                 "los_matrix": self.los_matrix,
                 "blocking_obstacles": self.blocking_obstacles
             },
-            "obstacles": self.obstacles
+            "obstacles": self.obstacles,
+            "physics": self.physics
         }

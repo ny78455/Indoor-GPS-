@@ -1,0 +1,282 @@
+# physics_engine.py
+import numpy as np
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
+import yaml
+
+from VLCL_AI.environment.state import EnvironmentState
+from VLCL_AI.physics.constants import (
+    DEFAULT_RESPONSIVITY, DEFAULT_RECEIVER_AREA, DEFAULT_BANDWIDTH, 
+    DEFAULT_TRANSIMPEDANCE_GAIN, DEFAULT_AMBIENT_TEMPERATURE, DEFAULT_BACKGROUND_CURRENT,
+    DEFAULT_LENS_GAIN
+)
+from VLCL_AI.physics.optical_channel import compute_los_dc_gain
+from VLCL_AI.physics.reflection import compute_nlos_reflection
+from VLCL_AI.physics.photodiode import Photodiode
+from VLCL_AI.physics.noise import total_noise_variance
+from VLCL_AI.physics.snr import compute_snr
+from VLCL_AI.physics.signal import convert_optical_to_electrical
+from VLCL_AI.physics.channel_estimator import ChannelEstimator
+from VLCL_AI.physics.raytracer import RayTracer
+
+@dataclass(frozen=True)
+class PhysicsState:
+    """Immutable physics state calculated per simulation frame."""
+    distances: Dict[int, float]
+    incident_angles: Dict[int, float]
+    irradiance_angles: Dict[int, float]
+    los_gains: Dict[int, float]
+    nlos_gains: Dict[int, float]
+    total_gains: Dict[int, float]
+    received_powers: Dict[int, float]
+    optical_delays: Dict[int, float]
+    propagation_times: Dict[int, float]
+    electrical_currents: Dict[int, float]
+    voltages: Dict[int, float]
+    noise_variances: Dict[int, float]
+    snrs: Dict[int, float]
+    channel_matrix: List[List[float]]
+    coverage_map: Dict[str, Any]
+    metrics: Dict[str, Any]
+
+class PhysicsEngine:
+    def __init__(self, config_path: Optional[str] = None):
+        # Load custom configurations if provided
+        self.config = {
+            "ambient_temperature": DEFAULT_AMBIENT_TEMPERATURE,
+            "receiver_area": DEFAULT_RECEIVER_AREA,
+            "responsivity": DEFAULT_RESPONSIVITY,
+            "background_current": DEFAULT_BACKGROUND_CURRENT,
+            "bandwidth": DEFAULT_BANDWIDTH,
+            "tia_gain": DEFAULT_TRANSIMPEDANCE_GAIN,
+            "enable_reflection": True,
+            "enable_raytracing": True,
+            "enable_nlos": True,
+            "ray_count": 100,
+            "refractive_index": 1.5,
+            "fov": 70.0,
+            "noise_config": {
+                "shot": True,
+                "thermal": True,
+                "background": True,
+                "electronic": True
+            }
+        }
+        
+        if config_path:
+            try:
+                with open(config_path, 'r') as f:
+                    yaml_data = yaml.safe_load(f)
+                    if yaml_data and "physics" in yaml_data:
+                        self.config.update(yaml_data["physics"])
+            except Exception:
+                pass
+                
+        # Initialize sub-modules
+        self.photodiode = Photodiode(
+            area=self.config["receiver_area"],
+            responsivity=self.config["responsivity"],
+            bandwidth=self.config["bandwidth"],
+            tia_gain=self.config["tia_gain"],
+            temperature=self.config["ambient_temperature"]
+        )
+        
+        self.channel_estimator = ChannelEstimator()
+        self.last_state: Optional[PhysicsState] = None
+
+    def compute(self, env_state: EnvironmentState) -> PhysicsState:
+        """
+        Executes the full optical & optoelectronic propagation logic using EnvironmentState.
+        """
+        rx_pos = np.array(env_state.receiver_position)
+        rx_normal = np.array(env_state.receiver_orientation)
+        
+        distances = {}
+        incident_angles = {}
+        irradiance_angles = {}
+        los_gains = {}
+        nlos_gains = {}
+        total_gains = {}
+        received_powers = {}
+        optical_delays = {}
+        propagation_times = {}
+        electrical_currents = {}
+        voltages = {}
+        noise_variances = {}
+        snrs = {}
+        
+        num_leds = len(env_state.led_positions)
+        
+        # Room dimensions for reflection model
+        # Default room size 5.0 x 5.0 x 3.0 m
+        room_dims = [5.0, 5.0, 3.0]
+        
+        # Step through each LED
+        for led_id, led_pos in env_state.led_positions.items():
+            led_pos_arr = np.array(led_pos)
+            dist = env_state.distances.get(led_id, float(np.linalg.norm(rx_pos - led_pos_arr)))
+            distances[led_id] = dist
+            
+            # Record angles
+            inc_ang = env_state.incident_angles.get(led_id, 0.0)
+            irr_ang = env_state.irradiance_angles.get(led_id, 0.0)
+            incident_angles[led_id] = inc_ang
+            irradiance_angles[led_id] = irr_ang
+            
+            # Compute direct LOS path loss
+            is_los = env_state.los_matrix.get(led_id, True)
+            
+            # Power
+            power = env_state.led_powers.get(led_id, 20.0)
+            beam_angle = 60.0 # Nominal beam half power angle
+            
+            los_gain = compute_los_dc_gain(
+                distance=dist,
+                irradiance_angle_rad=irr_ang,
+                incident_angle_rad=inc_ang,
+                beam_angle_deg=beam_angle,
+                receiver_area=self.config["receiver_area"],
+                fov_rad=np.radians(self.config["fov"]),
+                refractive_index=self.config["refractive_index"],
+                is_los=is_los
+            )
+            los_gains[led_id] = los_gain
+            
+            # Compute NLOS reflections if enabled
+            nlos_gain = 0.0
+            if self.config["enable_nlos"] and self.config["enable_reflection"]:
+                nlos_gain = compute_nlos_reflection(
+                    led_pos=led_pos_arr,
+                    led_normal=np.array([0.0, 0.0, -1.0]),
+                    m=1.0, # Default Lambertian emission order for NLOS secondary source
+                    rx_pos=rx_pos,
+                    rx_normal=rx_normal,
+                    rx_area=self.config["receiver_area"],
+                    fov_rad=np.radians(self.config["fov"]),
+                    room_dims=room_dims,
+                    num_grid_points=16
+                )
+            nlos_gains[led_id] = nlos_gain
+            
+            # Combine total channel gain
+            tot_gain = los_gain + nlos_gain
+            total_gains[led_id] = tot_gain
+            
+            # Received optical power
+            rx_pwr = power * tot_gain
+            received_powers[led_id] = rx_pwr
+            
+            # Propagation delays
+            c = 299792458.0
+            delay = dist / c if dist > 0 else 0.0
+            optical_delays[led_id] = delay
+            propagation_times[led_id] = delay
+            
+            # Photodiode conversion
+            pd_out = self.photodiode.process_optical_power(rx_pwr)
+            electrical_currents[led_id] = float(pd_out["photo_current"])
+            voltages[led_id] = float(pd_out["voltage"])
+            
+            # Noise
+            noise_res = total_noise_variance(
+                signal_current=float(pd_out["photo_current"]),
+                tia_gain=self.config["tia_gain"],
+                bandwidth=self.config["bandwidth"],
+                temperature=self.config["ambient_temperature"],
+                background_current=self.config["background_current"],
+                config=self.config["noise_config"]
+            )
+            noise_var = float(noise_res["total_variance"])
+            noise_variances[led_id] = noise_var
+            
+            # SNR calculation
+            snr_res = compute_snr(float(pd_out["photo_current"]), noise_var)
+            snrs[led_id] = float(snr_res["electrical_snr_db"])
+            
+        # Update Channel matrix via ChannelEstimator
+        self.channel_estimator.estimate_channel(
+            los_gains=list(los_gains.values()),
+            distances=list(distances.values()),
+            travel_times=list(optical_delays.values())
+        )
+        
+        # Calculate coverage map & metrics
+        metrics = {
+            "average_channel_gain": float(np.mean(list(total_gains.values()))),
+            "average_snr": float(np.mean(list(snrs.values()))),
+            "visible_leds": int(sum(1 for v in env_state.visibility_matrix.values() if v)),
+            "blocked_leds": int(sum(1 for l in env_state.los_matrix.values() if not l)),
+            "propagation_delay": float(np.mean(list(optical_delays.values()))),
+            "total_optical_power": float(sum(received_powers.values()))
+        }
+        
+        coverage_map = {
+            "coordinates": rx_pos.tolist(),
+            "is_covered": metrics["visible_leds"] >= 3,
+            "signal_strength_category": "Strong" if metrics["average_snr"] > 25 else "Moderate" if metrics["average_snr"] > 15 else "Weak"
+        }
+        
+        # Assemble PhysicsState
+        state = PhysicsState(
+            distances=distances,
+            incident_angles=incident_angles,
+            irradiance_angles=irradiance_angles,
+            los_gains=los_gains,
+            nlos_gains=nlos_gains,
+            total_gains=total_gains,
+            received_powers=received_powers,
+            optical_delays=optical_delays,
+            propagation_times=propagation_times,
+            electrical_currents=electrical_currents,
+            voltages=voltages,
+            noise_variances=noise_variances,
+            snrs=snrs,
+            channel_matrix=self.channel_estimator.get_channel_matrix().tolist(),
+            coverage_map=coverage_map,
+            metrics=metrics
+        )
+        
+        self.last_state = state
+        return state
+
+    def step(self, env_state: EnvironmentState) -> PhysicsState:
+        """Alias for compute() as required by step execution API."""
+        return self.compute(env_state)
+
+    def get_channel(self) -> np.ndarray:
+        return self.channel_estimator.get_channel_matrix()
+
+    def get_snr(self) -> Dict[str, Any]:
+        if not self.last_state:
+            return {}
+        return self.last_state.snrs
+
+    def get_received_power(self) -> Dict[str, Any]:
+        if not self.last_state:
+            return {}
+        return self.last_state.received_powers
+
+    def export(self) -> dict:
+        if not self.last_state:
+            return {}
+        return {
+            "distances": self.last_state.distances,
+            "los_gains": self.last_state.los_gains,
+            "nlos_gains": self.last_state.nlos_gains,
+            "total_gains": self.last_state.total_gains,
+            "received_powers": self.last_state.received_powers,
+            "electrical_currents": self.last_state.electrical_currents,
+            "voltages": self.last_state.voltages,
+            "snrs": self.last_state.snrs,
+            "metrics": self.last_state.metrics
+        }
+
+    def visualize(self) -> dict:
+        """Returns visual parameters for heatmaps and rays."""
+        if not self.last_state:
+            return {}
+        return {
+            "snr_heatmap": self.last_state.snrs,
+            "power_heatmap": self.last_state.received_powers,
+            "metrics": self.last_state.metrics
+        }

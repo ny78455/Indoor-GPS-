@@ -5,6 +5,8 @@ from loguru import logger
 from .state import EnvironmentState
 from .scene import Scene
 from .mobility import MobilityEngine
+from VLCL_AI.physics.physics_engine import PhysicsEngine
+from dataclasses import replace
 
 class EventDispatcher:
     """Dispatches environment events to registered subscriber callback hooks."""
@@ -100,6 +102,7 @@ class VLCLSimulator:
         self.mobility_engine = mobility_engine
         self.clock = clock if clock else SimulationClock()
         self.events = EventDispatcher()
+        self.physics = PhysicsEngine()
         
         logger.info("VLCL Simulator engine initiated.")
 
@@ -159,6 +162,11 @@ class VLCLSimulator:
             
             obstacles=[obs.to_dict() for obs in self.scene.obstacles.values()]
         )
+        
+        # Compute physics
+        self.physics.compute(state)
+        state = replace(state, physics=self.physics.export())
+        
         return state
 
     def get_state(self) -> EnvironmentState:
@@ -185,3 +193,6 @@ class VLCLSimulator:
             blocking_obstacles=metrics["blocking_obstacles"],
             obstacles=[obs.to_dict() for obs in self.scene.obstacles.values()]
         )
+        
+        self.physics.compute(state)
+        return replace(state, physics=self.physics.export())
