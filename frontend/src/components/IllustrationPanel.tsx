@@ -182,6 +182,15 @@ function HowItWorksFlow() {
       border: "border-emerald-900/40",
       title: "Position Calculated",
       desc: "Using signal strengths from all visible LEDs and trilateration math, the receiver's exact X,Y,Z position is computed."
+    },
+    {
+      num: "5",
+      icon: <Radio className="w-5 h-5" />,
+      color: "text-fuchsia-400",
+      bg: "bg-fuchsia-950/40",
+      border: "border-fuchsia-900/40",
+      title: "Data Streaming",
+      desc: "Simultaneously, the strongest LED modulates internet data using DCO-OFDM. The receiver decodes this blinking into megabits per second (Mbps)."
     }
   ];
 
@@ -190,7 +199,7 @@ function HowItWorksFlow() {
       <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
         <ArrowRight className="w-4 h-4 text-cyan-400" /> How It Works — Step by Step
       </h4>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {steps.map((step, idx) => (
           <div key={idx} className={`relative flex flex-col gap-2 rounded-xl p-4 border ${step.border} ${step.bg}`}>
             <div className="flex items-center gap-2">
@@ -222,6 +231,10 @@ function GlossarySection() {
     { term: "APD", full: "Avalanche Photodiode", color: "text-violet-400", desc: "The light sensor on the receiver. Converts light into electrical signal. Defined by its active area size (A_apd)." },
     { term: "FOV", full: "Field of View", color: "text-amber-400", desc: "The cone angle (in degrees) within which the receiver can detect light. Outside this cone, signal = 0." },
     { term: "Lambertian m", full: "Lambertian Emission Order", color: "text-pink-400", desc: "Describes how focused the LED beam is. m=1 means even spread. Higher m = narrower, more focused beam." },
+    { term: "DCO-OFDM", full: "DC-Biased Optical OFDM", color: "text-fuchsia-400", desc: "The math technique used to send digital data over light. It adds a DC bias to keep the light strictly positive (since light cannot have negative intensity)." },
+    { term: "BER", full: "Bit Error Rate", color: "text-rose-400", desc: "The percentage of data bits that were corrupted during transmission due to noise or low signal." },
+    { term: "EVM", full: "Error Vector Magnitude", color: "text-orange-400", desc: "A measure of how distorted the received symbols are. High EVM means the receiver is struggling to decode the QAM constellation." },
+    { term: "QAM", full: "Quadrature Amplitude Modulation", color: "text-blue-400", desc: "A way to pack multiple bits of data into a single 'symbol' by varying the amplitude and phase of the signal." },
   ];
 
   return (
@@ -307,6 +320,15 @@ export default function IllustrationPanel() {
             borderColor="border-rose-900/40"
             description="People or furniture can block the light path between an LED and the receiver. This creates NLOS (Non-Line-of-Sight) conditions."
             detail="In the 3D view: the red cylinder (human) and red box (desk) that you can reposition with sliders."
+          />
+          <ConceptCard
+            icon={<Radio className="w-5 h-5" />}
+            title="Digital Signal Processor"
+            color="text-fuchsia-400"
+            bgColor="bg-fuchsia-950/30"
+            borderColor="border-fuchsia-900/40"
+            description="Module 3 takes the analog light intensity and converts it into a digital communication stream using QAM and DCO-OFDM technology."
+            detail="In the telemetry panel: watch the real-time Data Rate, BER, and EVM percentages stream in!"
           />
         </div>
       </div>

@@ -141,6 +141,41 @@ function RotationDiagram() {
   );
 }
 
+// ─── SVG: Signal vs Noise ─────────────────────────────────────────────────
+function SnrDiagram() {
+  return (
+    <svg viewBox="0 0 200 160" className="w-full max-w-[200px] mx-auto" xmlns="http://www.w3.org/2000/svg">
+      {/* Background axes */}
+      <line x1="20" y1="140" x2="180" y2="140" stroke="#475569" strokeWidth="1" />
+      <line x1="20" y1="20" x2="20" y2="140" stroke="#475569" strokeWidth="1" />
+      
+      {/* Noise Floor (Red jagged line) */}
+      <path d="M 20 120 L 40 125 L 60 115 L 80 122 L 100 118 L 120 124 L 140 116 L 160 125 L 180 119" fill="none" stroke="#f43f5e" strokeWidth="2" opacity="0.6" />
+      <polygon points="20,120 40,125 60,115 80,122 100,118 120,124 140,116 160,125 180,119 180,140 20,140" fill="#f43f5e" opacity="0.1" />
+      
+      {/* Signal (Green Sine Wave) */}
+      <path d="M 20 80 Q 40 30, 60 80 T 100 80 T 140 80 T 180 80" fill="none" stroke="#10b981" strokeWidth="2" />
+      
+      {/* Annotations */}
+      <text x="25" y="45" fill="#10b981" fontSize="10" fontFamily="Inter" fontWeight="bold">Signal Power</text>
+      <text x="25" y="110" fill="#f43f5e" fontSize="10" fontFamily="Inter" fontWeight="bold">Noise Floor</text>
+      
+      {/* SNR Arrow */}
+      <line x1="100" y1="80" x2="100" y2="118" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3,2" markerEnd="url(#arrowS)" markerStart="url(#arrowS_rev)" />
+      <text x="105" y="103" fill="#38bdf8" fontSize="10" fontFamily="Inter" fontWeight="bold">SNR</text>
+
+      <defs>
+        <marker id="arrowS" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#38bdf8" />
+        </marker>
+        <marker id="arrowS_rev" markerWidth="6" markerHeight="6" refX="2" refY="3" orient="auto-start-reverse">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#38bdf8" />
+        </marker>
+      </defs>
+    </svg>
+  );
+}
+
 // ─── Formula Card ─────────────────────────────────────────────────────────
 interface FormulaCardProps {
   number: number;
@@ -275,10 +310,41 @@ export default function FormulaPanel() {
           extraNote="Try changing Roll/Pitch/Yaw in the control panel to see the receiver orientation change in the 3D view. When tilted away from the LEDs, H(0) drops because cos(ψ) decreases."
         />
 
+        <FormulaCard
+          number={4}
+          title="Signal-to-Noise Ratio (SNR)"
+          plainEnglish="SNR measures how strong the received light signal is compared to background electronic and optical noise. Higher SNR means a cleaner signal for the communication engine."
+          formula={"SNR_dB = 10 · log10( (R · Prx)² / (σ²_thermal + σ²_shot) )"}
+          variables={[
+            { symbol: "SNR_dB", meaning: "Signal-to-noise ratio in decibels", color: "text-cyan-300" },
+            { symbol: "R", meaning: "Photodiode responsivity (A/W)", color: "text-emerald-300" },
+            { symbol: "Prx", meaning: "Received optical power from LEDs", color: "text-amber-300" },
+            { symbol: "σ²_thermal", meaning: "Thermal noise variance (circuit heat)", color: "text-rose-300" },
+            { symbol: "σ²_shot", meaning: "Shot noise variance (background light)", color: "text-pink-300" },
+          ]}
+          diagram={<SnrDiagram />}
+          extraNote="The physics engine calculates SNR, which the communication engine then uses to determine how much data can be successfully transmitted without errors!"
+        />
+
+        <FormulaCard
+          number={5}
+          title="Shannon Capacity (Max Data Rate)"
+          plainEnglish="The Shannon-Hartley theorem calculates the absolute maximum data rate (in Mbps) that can be reliably transmitted over the optical channel, bounded by bandwidth and SNR."
+          formula={"C = B · log2( 1 + SNR_linear )"}
+          variables={[
+            { symbol: "C", meaning: "Channel Capacity (bits per second)", color: "text-cyan-300" },
+            { symbol: "B", meaning: "Bandwidth of the LED/Channel (Hz)", color: "text-violet-300" },
+            { symbol: "SNR_linear", meaning: "Linear Signal-to-Noise Ratio (not dB!)", color: "text-emerald-300" },
+            { symbol: "log2", meaning: "Base-2 logarithm (converting to bits)", color: "text-slate-400" },
+          ]}
+          diagram={<SnrDiagram />}
+          extraNote="Module 3 uses this formula to calculate the Theoretical Maximum Rate shown in the Communication Panel. Notice how getting further from the LED drops the SNR, which immediately drops the Data Rate!"
+        />
+
       </div>
 
       {/* Summary note */}
-      <div className="flex items-start gap-3 bg-cyan-950/20 border border-cyan-900/30 rounded-2xl p-4">
+      <div className="flex items-start gap-3 bg-cyan-950/20 border border-cyan-900/30 rounded-2xl p-4 mt-2">
         <HelpCircle className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
         <div className="flex flex-col gap-1">
           <h4 className="text-sm font-bold text-cyan-300">How These Formulas Connect</h4>
@@ -286,7 +352,8 @@ export default function FormulaPanel() {
             Formula 1 gives you <code className="text-cyan-300 font-mono">m</code>. 
             That <code className="text-cyan-300 font-mono">m</code> feeds into Formula 2 to compute <code className="text-cyan-300 font-mono">H(0)</code>. 
             Formula 3 determines the receiver orientation which affects <code className="text-cyan-300 font-mono">ψ</code> in Formula 2.
-            All three work together every simulation frame to compute signal strength in real-time!
+            This gives the received power <code className="text-cyan-300 font-mono">Prx</code>, which Formula 4 uses to calculate the <code className="text-cyan-300 font-mono">SNR</code>.
+            Finally, the Communication Engine plugs that <code className="text-cyan-300 font-mono">SNR</code> into Formula 5 to calculate your live <code className="text-cyan-300 font-mono">Data Rate</code>!
           </p>
         </div>
       </div>
