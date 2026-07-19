@@ -114,6 +114,8 @@ export default function App() {
     trajectoryPoints: [[2.5, 2.5, 0.85]],
     physicsMetrics: null,
     physicsLoading: false,
+    commMetrics: null,
+    commLoading: false,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("visualizer");
@@ -378,6 +380,67 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
+  // ─── Communication Engine Polling (every 30 frames → ~1.5s) ─────────────
+  const commFrameRef = useRef(0);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+
+    const POLL_EVERY = 30;
+    commFrameRef.current = (commFrameRef.current + 1) % POLL_EVERY;
+    if (commFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      dc_gains: state.dcGains,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+    };
+
+    setState((prev) => ({ ...prev, commLoading: true }));
+
+    fetch("/api/communication", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.communication) {
+          setState((prev) => ({
+            ...prev,
+            commMetrics: data.communication,
+            commLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, commLoading: false }));
+        }
+      })
+      .catch(() => {
+        setState((prev) => ({ ...prev, commLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
   // ─── 4. Handlers ──────────────────────────────────────────────────────────
   const handleDownloadZip = () => window.open("/api/export-zip");
 
@@ -576,6 +639,8 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
                   state={state}
                   physicsMetrics={state.physicsMetrics}
                   physicsLoading={state.physicsLoading}
+                  commMetrics={state.commMetrics}
+                  commLoading={state.commLoading}
                 />
               </div>
 

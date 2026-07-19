@@ -71,6 +71,34 @@ export interface PhysicsMetrics {
   };
 }
 
+// Communication KPIs returned by CommunicationEngine (Module 3)
+export interface CommunicationMetrics {
+  simulation_time: number;
+
+  // Data Rate
+  sum_rate_mbps: number;                      // Raw aggregate throughput in Mbps
+  effective_throughput_mbps: number;          // BER-adjusted effective Mbps
+  spectral_efficiency: number;                // bps/Hz
+
+  // Waveform Quality
+  papr_db: number;                            // Peak-to-Average Power Ratio (dB)
+  clipping_ratio_pct: number;                 // % of samples clipped by DAC
+
+  // Error Metrics (per user)
+  ber_per_user: Record<string, number>;       // Bit Error Rate per user
+  evm_per_user_pct: Record<string, number>;   // Error Vector Magnitude % per user
+  rate_per_user_mbps: Record<string, number>; // Data rate per user in Mbps
+
+  // Diagnostic metadata
+  metadata: {
+    active_led_id: number;                    // LED selected as primary transmitter
+    bit_errors: number;                       // Raw count of errored bits in frame
+    average_analytical_ber: number;           // Theoretical BER from Shannon bounds
+    clipping_distortion: number;              // Signal distortion from clipping
+    electrical_power: number;                 // Electrical drive power (W)
+  };
+}
+
 export interface SimulationState {
   currentTime: number;
   frameIndex: number;
@@ -93,7 +121,12 @@ export interface SimulationState {
   blockingObstacles: Record<number, string>;
   trajectoryPoints: [number, number, number][];
 
-  // Full physics engine metrics (Python backend)
+  // Full physics engine metrics (Python backend — Module 2)
   physicsMetrics: PhysicsMetrics | null;
   physicsLoading: boolean;
+
+  // Communication engine metrics (Python backend — Module 3)
+  commMetrics: CommunicationMetrics | null;
+  commLoading: boolean;
 }
+
