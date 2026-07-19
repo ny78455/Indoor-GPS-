@@ -55,37 +55,54 @@ The application separates UI representation, network capabilities, and raw physi
 
 ---
 
-## 🔬 High-Fidelity Physics & Mathematical Model
+## 🔬 Simulation AI Core Architecture
 
-The Python engine (`VLCL_AI`) executes advanced calculations to simulate optical wireless communication channels, acting as a high-fidelity digital twin of physical electromagnetics.
+The Python AI core (`/backend/VLCL_AI`) is divided into two highly specialized modules. They work in tandem to create a true digital twin: a fast spatial awareness engine (Module 1), and a rigorous electromagnetic calculation engine (Module 2).
 
-### 1. Room Geometry and Reflectivity (Multi-path)
+---
 
-The indoor space is defined as a bounding box ($W \times L \times H$). Walls, ceilings, and floors are defined with specific reflection surface coefficients ($\rho_W, \rho_C, \rho_F$). The physics engine's **Raytracer** tracks Non-Line-Of-Sight (NLOS) reflections, accounting for multi-path propagation and impulse delay spread caused by light bouncing off surfaces before reaching the receiver.
+### Module 1: The Environment Simulation Engine
+**Location**: `/backend/VLCL_AI/environment`
 
-### 2. Transmitter (Ceiling-Mounted LEDs)
+This engine acts as the "director" of the digital twin. It manages spatial awareness, configuration states, and bounding-box level interactions. It focuses on the macroscopic geometry of the room and the progression of time.
 
+#### 1. Room Geometry and Spatial State
+The indoor space is defined as a 3D bounding box ($W \times L \times H$). The Simulation Engine handles coordinate mapping and tracking all entities (LEDs, receivers, obstacles) within this grid. It uses simple analytic geometry to compute raw distances and directional vectors between any two points.
+
+#### 2. Mobility and Trajectory Patterns
+It controls the kinetic movement of the receiver. Based on predefined models (like `RandomWaypoint`, `Linear`, or `Static`), it calculates velocity, acceleration, and updates the receiver's $(x, y, z)$ position on every time step ($dt$).
+
+#### 3. Bounding-Box Obstacle Intersections
+Physical obstacles (like cylinders representing human researchers or rectangular partitions) are tracked by the simulation engine. It performs primary ray-tracing to test if a 3D line segment (from an LED to a receiver) intersects an obstacle's bounding shape. If intersected, the simulation engine flags a **Line-of-Sight (LOS) blockage** for that specific transmission path.
+
+#### 4. Simulation Orchestrator
+The `Simulator` class sits here. It manages the lifecycle loop: stepping through frames, updating mobility, gathering the macroscopic state of the `Scene`, and piping this data into either the frontend visualizer or down into the Physics Engine for deep analysis.
+
+---
+
+### Module 2: The High-Fidelity Physics Engine
+**Location**: `/backend/VLCL_AI/physics`
+
+While Module 1 handles *where* things are, Module 2 handles *how light behaves* between them. The Physics Engine executes advanced electromagnetic calculations to simulate optical wireless communication channels, acting as a rigorous digital twin of physical optoelectronics.
+
+#### 1. Advanced Transmitter Modeling (Ceiling-Mounted LEDs)
 Each LED transmitter acts as a lambertian emitter. The emission radiation profile is characterized by its **Lambertian Order** $m$, calculated from the semi-angle emission beam ($\theta_{1/2}$):
 
 $$
 m = \frac{-\ln(2)}{\ln(\cos(\theta_{1/2}))}
 $$
 
-The LED projects optical radiation down with a specified optical power output ($P_{tx}$), subcarrier frequency modulation, and DC bias values.
+The physics engine tracks subcarrier frequency modulation, DC bias, and projects optical radiation down with a specified optical power output ($P_{tx}$).
 
-### 3. Optoelectronic Receiver Node (Photodiode)
-
-The mobile photodiode platform translates optical power into electrical signals. It features:
-
+#### 2. Optoelectronic Receiver Node (Photodiode)
+The mobile photodiode platform translates optical power into electrical signals. It evaluates:
 * **Active Area ($A_{apd}$)**: Physical capture plane size in $m^2$.
-* **Semi-angle Field of View ($\text{FOV}$)**: Evaluates reception capability. If the incident angle of incoming light beams exceeds the FOV boundary, signal reception drops to $0.0$.
-* **Optical Concentrator**: Lenses that amplify the incoming signal gain $g(\psi)$ based on the refractive index ($n$):
-  $$ g(\psi) = \frac{n^2}{\sin^2(\text{FOV})} $$
+* **Optical Concentrator**: Lenses that amplify incoming signal gain $g(\psi)$ based on the refractive index ($n$).
+* **Optical Filter**: Transmission gain $T_s(\psi)$ for specific wavelengths.
 * **Responsivity ($R$)**: The conversion efficiency (in A/W) of optical power to electrical current, resulting in a photodiode current: $I_{pd} = R \times P_{rx}$.
 
-### 4. Geometry and Line-Of-Sight Channel Loss
-
-The simulator calculates the **Lambertian Direct Current Optical Gain ($H(0)$)**:
+#### 3. Geometry and Line-Of-Sight Channel Loss
+The Physics Engine calculates the **Lambertian Direct Current Optical Gain ($H(0)$)**:
 
 $$
 H(0) = \begin{cases} 
@@ -95,30 +112,23 @@ H(0) = \begin{cases}
 $$
 
 Where:
-
-* $d$: Euclidean distance between Transmitter (Tx) and Receiver (Rx).
+* $d$: Euclidean distance.
 * $\phi$: Angle of irradiance relative to the transmitter normal vector.
 * $\psi$: Angle of incidence relative to the receiver normal vector.
-* $T_s(\psi)$: Optical filter transmission gain.
 
-### 5. Obstacles & Ray Tracing Blockage
+#### 4. Multi-path Reflectivity and Raytracing (NLOS)
+The physics engine features a dedicated raytracer that tracks Non-Line-Of-Sight (NLOS) reflections. Using surface reflection coefficients ($\rho_W, \rho_C, \rho_F$), it calculates multi-path propagation and impulse delay spread caused by light bouncing off walls and floors before reaching the receiver, maintaining signal integrity even when primary LOS is blocked.
 
-Physical obstacles (like cylinders representing researchers or partitions) are registered inside the environment. The engine uses 3D analytical geometry to test line segments for intersections. If a ray intersects an obstacle, it logs a **Line-of-Sight (LOS) blockage** for that specific light path, automatically dropping LOS $H(0)$ to zero and calculating NLOS reflections if enabled.
-
-### 6. Noise Models & Signal-to-Noise Ratio (SNR)
-
-The physics engine calculates physical environmental noises acting upon the receiver:
-
+#### 5. Noise Models & Signal-to-Noise Ratio (SNR)
+It computes physical environmental noises acting upon the receiver hardware:
 * **Thermal Noise ($\sigma^2_{thermal}$)**: Generated by the receiver's circuitry, dependent on temperature ($T_k$) and bandwidth ($B$).
 * **Shot Noise ($\sigma^2_{shot}$)**: Generated by ambient background light ($P_{bg}$) and the signal itself.
 
-The comprehensive electrical **Signal-to-Noise Ratio (SNR)** is calculated in decibels (dB):
+The final electrical **Signal-to-Noise Ratio (SNR)** output is calculated in decibels (dB):
 
 $$
 \text{SNR}_{\text{dB}} = 10 \log_{10}\left( \frac{(R \cdot P_{rx})^2}{\sigma^2_{thermal} + \sigma^2_{shot}} \right)
 $$
-
----
 
 ## ⚡ Execution and Interface Commands
 

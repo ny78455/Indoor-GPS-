@@ -53,9 +53,9 @@ leds:
     localization_enabled: true
 
 receiver:
-  position: [1.04, 2.83, 0.85]
+  position: [3.97, 2.19, 0.85]
   orientation: [0, 0, 1]
-  velocity: [-0.11151710700477577, -0.4874053085936646, 0]
+  velocity: [0.10358105931552782, 0.4891533135439983, 0]
   acceleration: [0, 0, 0]
   fov: 70.0
   apd_size: 1.0e-4
