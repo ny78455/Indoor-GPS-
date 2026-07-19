@@ -53,6 +53,24 @@ export interface MobilityParams {
   waypoints: [number, number, number][];
 }
 
+// Full physics metrics returned by the PhysicsEngine
+export interface PhysicsMetrics {
+  snrs: Record<string, number>;               // dB per LED
+  received_powers: Record<string, number>;    // Watts per LED
+  los_gains: Record<string, number>;          // LOS channel gain per LED
+  nlos_gains: Record<string, number>;         // NLOS channel gain per LED
+  electrical_currents: Record<string, number>; // Amps per LED
+  voltages: Record<string, number>;           // Volts per LED
+  metrics: {
+    average_channel_gain: number;
+    average_snr: number;                      // dB
+    visible_leds: number;
+    blocked_leds: number;
+    propagation_delay: number;                // seconds
+    total_optical_power: number;              // Watts
+  };
+}
+
 export interface SimulationState {
   currentTime: number;
   frameIndex: number;
@@ -65,7 +83,7 @@ export interface SimulationState {
   obstacles: ObstacleParams[];
   mobility: MobilityParams;
   
-  // Real-time calculated telemetry
+  // Real-time calculated telemetry (JS)
   distances: Record<number, number>;
   incidentAngles: Record<number, number>;
   irradianceAngles: Record<number, number>;
@@ -74,4 +92,8 @@ export interface SimulationState {
   visibilityMatrix: Record<number, boolean>;
   blockingObstacles: Record<number, string>;
   trajectoryPoints: [number, number, number][];
+
+  // Full physics engine metrics (Python backend)
+  physicsMetrics: PhysicsMetrics | null;
+  physicsLoading: boolean;
 }

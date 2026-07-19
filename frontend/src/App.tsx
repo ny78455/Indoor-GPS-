@@ -111,7 +111,9 @@ export default function App() {
     losMatrix: {},
     visibilityMatrix: {},
     blockingObstacles: {},
-    trajectoryPoints: [[2.5, 2.5, 0.85]]
+    trajectoryPoints: [[2.5, 2.5, 0.85]],
+    physicsMetrics: null,
+    physicsLoading: false,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("visualizer");
@@ -314,6 +316,68 @@ export default function App() {
     return () => clearInterval(timer);
   }, [state.isPlaying, state.speedFactor]);
 
+  // ─── Physics Engine Polling (every 10 frames → ~0.5s) ────────────────────
+  const physicsFrameRef = useRef(0);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+
+    const POLL_EVERY = 10; // frames between physics API calls
+    physicsFrameRef.current = (physicsFrameRef.current + 1) % POLL_EVERY;
+    if (physicsFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    // Build the payload expected by /api/physics
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      dc_gains: state.dcGains,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+    };
+
+    setState((prev) => ({ ...prev, physicsLoading: true }));
+
+    fetch("/api/physics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.physics) {
+          setState((prev) => ({
+            ...prev,
+            physicsMetrics: data.physics,
+            physicsLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, physicsLoading: false }));
+        }
+      })
+      .catch(() => {
+        setState((prev) => ({ ...prev, physicsLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
   // ─── 4. Handlers ──────────────────────────────────────────────────────────
   const handleDownloadZip = () => window.open("/api/export-zip");
 
@@ -508,7 +572,11 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
 
               {/* Telemetry Scrollable Panel */}
               <div className="flex-1 overflow-hidden border border-slate-800 rounded-2xl bg-[#0b1120] p-4 shadow-2xl">
-                <DebugOverlay state={state} />
+                <DebugOverlay
+                  state={state}
+                  physicsMetrics={state.physicsMetrics}
+                  physicsLoading={state.physicsLoading}
+                />
               </div>
 
               {/* Action Buttons (Fixed at bottom right) */}

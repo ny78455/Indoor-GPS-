@@ -133,6 +133,98 @@ obstacles:
     });
   });
 
+  // API Route: Real-time Physics Engine computation
+  app.post("/api/physics", (req, res) => {
+    const envState = req.body;
+
+    const isWin = process.platform === "win32";
+    const venvPythonPath = isWin
+      ? path.join(BASE_DIR, "VLCL_AI", ".venv", "Scripts", "python.exe")
+      : path.join(BASE_DIR, "VLCL_AI", ".venv", "bin", "python3");
+    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
+
+    // Inline Python script that instantiates PhysicsEngine and computes metrics
+    const inlineScript = `
+import sys, os, json
+sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
+from VLCL_AI.environment.state import EnvironmentState
+from VLCL_AI.physics.physics_engine import PhysicsEngine
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+state = EnvironmentState(
+    current_time=data.get("current_time", 0.0),
+    frame_index=data.get("frame_index", 0),
+    fps=data.get("fps", 60.0),
+    receiver_position=data["receiver_position"],
+    receiver_orientation=data["receiver_orientation"],
+    receiver_velocity=data.get("receiver_velocity", [0,0,0]),
+    receiver_acceleration=data.get("receiver_acceleration", [0,0,0]),
+    receiver_angles=data.get("receiver_angles", {"roll":0,"pitch":0,"yaw":0}),
+    led_positions={int(k): v for k,v in data["led_positions"].items()},
+    led_powers={int(k): v for k,v in data["led_powers"].items()},
+    led_active={int(k): v for k,v in data["led_active"].items()},
+    distances={int(k): v for k,v in data["distances"].items()},
+    incident_angles={int(k): v for k,v in data["incident_angles"].items()},
+    irradiance_angles={int(k): v for k,v in data["irradiance_angles"].items()},
+    dc_gains={int(k): v for k,v in data["dc_gains"].items()},
+    visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
+    los_matrix={int(k): v for k,v in data["los_matrix"].items()},
+    blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
+    obstacles=data.get("obstacles", [])
+)
+
+engine = PhysicsEngine()
+engine.compute(state)
+result = engine.export()
+
+def str_keys(d):
+    return {str(k): v for k,v in d.items()} if isinstance(d, dict) else d
+
+output = {
+    "snrs": str_keys(result.get("snrs", {})),
+    "received_powers": str_keys(result.get("received_powers", {})),
+    "los_gains": str_keys(result.get("los_gains", {})),
+    "nlos_gains": str_keys(result.get("nlos_gains", {})),
+    "electrical_currents": str_keys(result.get("electrical_currents", {})),
+    "voltages": str_keys(result.get("voltages", {})),
+    "metrics": result.get("metrics", {})
+}
+print(json.dumps(output))
+`;
+
+    // Use a temp file approach for reliability (avoids shell escaping issues)
+
+    const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_physics_tmp.py");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_physics_input.json");
+
+    try {
+      fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
+      fs.writeFileSync(tmpScript, inlineScript, "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
+    } catch (e: any) {
+      return res.status(500).json({ error: "Failed to write temp files: " + e.message });
+    }
+
+    exec(
+      `${pythonCmd} "${tmpScript}" "${tmpInput}"`,
+      { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, timeout: 8000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          return res.status(500).json({ error: stderr || error.message });
+        }
+        try {
+          const result = JSON.parse(stdout.trim());
+          res.json({ success: true, physics: result });
+        } catch {
+          res.status(500).json({ error: "Failed to parse physics output", raw: stdout });
+        }
+      }
+    );
+  });
+
+
   // API Route: View 3D Simulation HTML
   app.get("/api/visualization", (req, res) => {
     const htmlPath = path.join(BASE_DIR, "VLCL_AI", "logs", "simulation_3d.html");

@@ -1,18 +1,19 @@
 /**
  * DebugOverlay.tsx
  *
- * Real-time simulation statistics panel — redesigned to be readable for newcomers.
- * - Plain-English labels
- * - Color-coded signal status badges
- * - Visual signal strength progress bars
- * - Explanatory tooltips on technical terms
+ * Real-time simulation statistics panel.
+ * - Plain-English labels, color-coded status badges
+ * - Visual signal strength progress bars (JS geometry)
+ * - Physics Engine Metrics panel (SNR, optical power, currents — Python backend)
  */
 
-import { Cpu, Wifi, ShieldAlert, Navigation, Clock, Signal, CheckCircle2, XCircle, EyeOff } from "lucide-react";
-import { SimulationState } from "../types";
+import { Cpu, Wifi, ShieldAlert, Navigation, Clock, Signal, CheckCircle2, XCircle, EyeOff, Zap, Activity, AlertCircle, Loader } from "lucide-react";
+import { SimulationState, PhysicsMetrics } from "../types";
 
 interface DebugOverlayProps {
   state: SimulationState;
+  physicsMetrics: PhysicsMetrics | null;
+  physicsLoading: boolean;
 }
 
 // ─── Stat Row ──────────────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ function SignalBadge({ isLos, isFov }: { isLos: boolean; isFov: boolean }) {
   );
 }
 
-// ─── LED Signal Card ───────────────────────────────────────────────────────
+// ─── LED Signal Card (JS geometry) ────────────────────────────────────────
 function LEDSignalCard({ led, dist, gain, isLos, isFov }: {
   led: { id: number; power: number };
   dist: number;
@@ -69,7 +70,6 @@ function LEDSignalCard({ led, dist, gain, isLos, isFov }: {
   isLos: boolean;
   isFov: boolean;
 }) {
-  // Normalize gain for progress bar (nominal max ~1.2e-4)
   const gainPercent = Math.min(100, Math.max(0, Math.round((gain / 1.2e-4) * 100)));
   const active = isLos && isFov;
 
@@ -79,7 +79,6 @@ function LEDSignalCard({ led, dist, gain, isLos, isFov }: {
         ? "bg-emerald-950/20 border-emerald-900/40"
         : "bg-slate-900/40 border-slate-800"
     }`}>
-      {/* Header row */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-emerald-400 shadow-sm shadow-emerald-400/50" : "bg-slate-600"}`} />
@@ -89,19 +88,17 @@ function LEDSignalCard({ led, dist, gain, isLos, isFov }: {
         <SignalBadge isLos={isLos} isFov={isFov} />
       </div>
 
-      {/* Metrics row */}
       <div className="flex justify-between text-[11px]">
         <span className="text-slate-500">
           Distance: <span className="text-slate-300 font-mono font-semibold">{dist.toFixed(2)} m</span>
         </span>
         <span className="text-slate-500">
-          Gain: <span className={`font-mono font-bold ${active ? "text-cyan-400" : "text-slate-600"}`}>
+          Gain H(0): <span className={`font-mono font-bold ${active ? "text-cyan-400" : "text-slate-600"}`}>
             {gain > 0 ? gain.toExponential(2) : "0"}
           </span>
         </span>
       </div>
 
-      {/* Signal strength bar */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
           <span className="text-[10px] text-slate-600">Signal Strength</span>
@@ -128,8 +125,193 @@ function LEDSignalCard({ led, dist, gain, isLos, isFov }: {
   );
 }
 
+// ─── SNR Category Badge ────────────────────────────────────────────────────
+function SnrBadge({ snr }: { snr: number }) {
+  if (snr > 25)
+    return <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-900/40">STRONG</span>;
+  if (snr > 15)
+    return <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-amber-950/80 text-amber-400 border border-amber-900/40">MODERATE</span>;
+  if (snr > 0)
+    return <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-900/40">WEAK</span>;
+  return <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-slate-800 text-slate-500 border border-slate-700">NO SIG</span>;
+}
+
+// ─── Physics LED Card ──────────────────────────────────────────────────────
+function PhysicsLEDCard({ ledId, snr, power, current, losGain, nlosGain }: {
+  ledId: string;
+  snr: number;
+  power: number;
+  current: number;
+  losGain: number;
+  nlosGain: number;
+}) {
+  const snrPct = Math.min(100, Math.max(0, Math.round(((snr + 10) / 50) * 100)));
+  const snrColor =
+    snr > 25 ? "from-emerald-500 to-emerald-400" :
+    snr > 15 ? "from-amber-500 to-amber-400" :
+    snr > 0  ? "from-rose-500 to-rose-400"  :
+               "from-slate-700 to-slate-700";
+
+  return (
+    <div className="flex flex-col gap-2 p-3 rounded-xl border bg-slate-950/60 border-slate-800">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Zap className="w-3 h-3 text-violet-400" />
+          <span className="text-xs font-bold text-slate-200">LED {ledId}</span>
+        </div>
+        <SnrBadge snr={snr} />
+      </div>
+
+      {/* SNR bar */}
+      <div className="flex flex-col gap-1">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-slate-500">SNR</span>
+          <span className="text-[11px] font-mono font-bold text-violet-300">{snr.toFixed(1)} dB</span>
+        </div>
+        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full bg-gradient-to-r ${snrColor} transition-all duration-700`}
+            style={{ width: `${snrPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Metrics grid */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+        <div>
+          <span className="text-slate-600">Rx Power</span>
+          <div className="font-mono font-bold text-cyan-400">{(power * 1e6).toFixed(3)} µW</div>
+        </div>
+        <div>
+          <span className="text-slate-600">PD Current</span>
+          <div className="font-mono font-bold text-teal-400">{(current * 1e6).toFixed(3)} µA</div>
+        </div>
+        <div>
+          <span className="text-slate-600">LOS Gain</span>
+          <div className="font-mono font-bold text-slate-400">{losGain.toExponential(2)}</div>
+        </div>
+        <div>
+          <span className="text-slate-600">NLOS Gain</span>
+          <div className="font-mono font-bold text-slate-500">{nlosGain.toExponential(2)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Physics Engine Panel ──────────────────────────────────────────────────
+function PhysicsPanel({ metrics, loading }: { metrics: PhysicsMetrics | null; loading: boolean }) {
+  const ledIds = metrics ? Object.keys(metrics.snrs) : [];
+  const coverageColor =
+    metrics?.metrics.average_snr !== undefined
+      ? metrics.metrics.average_snr > 25
+        ? "text-emerald-400"
+        : metrics.metrics.average_snr > 15
+        ? "text-amber-400"
+        : "text-rose-400"
+      : "text-slate-500";
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div className="flex items-center gap-2">
+          <Activity className="w-3.5 h-3.5 text-violet-400" />
+          <h4 className="font-bold text-xs text-slate-200">Physics Engine Metrics</h4>
+        </div>
+        {loading && (
+          <span className="flex items-center gap-1 text-[10px] text-violet-400">
+            <Loader className="w-3 h-3 animate-spin" /> Computing...
+          </span>
+        )}
+        {!loading && !metrics && (
+          <span className="flex items-center gap-1 text-[10px] text-slate-600">
+            <AlertCircle className="w-3 h-3" /> Python offline
+          </span>
+        )}
+        {!loading && metrics && (
+          <span className="flex items-center gap-1 text-[10px] text-emerald-400">
+            <CheckCircle2 className="w-3 h-3" /> Live
+          </span>
+        )}
+      </div>
+
+      {!metrics && !loading && (
+        <div className="text-center py-4">
+          <AlertCircle className="w-6 h-6 text-slate-700 mx-auto mb-2" />
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            Physics engine metrics require the Python venv.<br />
+            Run the simulation to activate.
+          </p>
+        </div>
+      )}
+
+      {metrics && (
+        <>
+          {/* Summary */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-slate-950/60 rounded-xl p-3">
+              <span className="text-[10px] text-slate-500 block mb-0.5">Avg SNR</span>
+              <span className={`font-mono font-black text-lg ${coverageColor}`}>
+                {metrics.metrics.average_snr.toFixed(1)}
+              </span>
+              <span className="text-[10px] text-slate-600 ml-0.5">dB</span>
+            </div>
+            <div className="bg-slate-950/60 rounded-xl p-3">
+              <span className="text-[10px] text-slate-500 block mb-0.5">Total Pwr</span>
+              <span className="font-mono font-black text-lg text-cyan-400">
+                {(metrics.metrics.total_optical_power * 1e6).toFixed(2)}
+              </span>
+              <span className="text-[10px] text-slate-600 ml-0.5">µW</span>
+            </div>
+            <div className="bg-slate-950/60 rounded-xl p-3">
+              <span className="text-[10px] text-slate-500 block mb-0.5">Visible</span>
+              <span className="font-mono font-black text-lg text-teal-400">
+                {metrics.metrics.visible_leds}
+              </span>
+              <span className="text-[10px] text-slate-600 ml-0.5">LEDs</span>
+            </div>
+            <div className="bg-slate-950/60 rounded-xl p-3">
+              <span className="text-[10px] text-slate-500 block mb-0.5">Blocked</span>
+              <span className={`font-mono font-black text-lg ${metrics.metrics.blocked_leds > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                {metrics.metrics.blocked_leds}
+              </span>
+              <span className="text-[10px] text-slate-600 ml-0.5">LEDs</span>
+            </div>
+          </div>
+
+          {/* Per-LED physics cards */}
+          <div className="flex flex-col gap-2">
+            {ledIds.map((id) => (
+              <PhysicsLEDCard
+                key={id}
+                ledId={id}
+                snr={metrics.snrs[id] ?? 0}
+                power={metrics.received_powers[id] ?? 0}
+                current={metrics.electrical_currents[id] ?? 0}
+                losGain={metrics.los_gains[id] ?? 0}
+                nlosGain={metrics.nlos_gains[id] ?? 0}
+              />
+            ))}
+          </div>
+
+          <StatRow
+            label="Propagation Delay"
+            value={`${(metrics.metrics.propagation_delay * 1e9).toFixed(2)} ns`}
+            valueClass="text-slate-400"
+          />
+          <StatRow
+            label="Avg Channel Gain"
+            value={metrics.metrics.average_channel_gain.toExponential(3)}
+            valueClass="text-slate-400"
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Export ───────────────────────────────────────────────────────────
-export default function DebugOverlay({ state }: DebugOverlayProps) {
+export default function DebugOverlay({ state, physicsMetrics, physicsLoading }: DebugOverlayProps) {
   const activeLeds = state.leds.filter(led => state.losMatrix[led.id] && state.visibilityMatrix[led.id]);
 
   return (
@@ -224,7 +406,6 @@ export default function DebugOverlay({ state }: DebugOverlayProps) {
             <h4 className="font-bold text-xs text-slate-200">Signal Summary</h4>
           </div>
           <div className="flex flex-col gap-2">
-            {/* Active LED count */}
             <div className="flex flex-col gap-1 bg-slate-950/50 rounded-xl p-3">
               <span className="text-slate-500 text-[11px]">Active LEDs (LOS + in FOV)</span>
               <div className="flex items-baseline gap-1">
@@ -241,7 +422,6 @@ export default function DebugOverlay({ state }: DebugOverlayProps) {
               </div>
             </div>
 
-            {/* LED quick status dots */}
             <div className="flex gap-2">
               {state.leds.map(led => {
                 const isLos = state.losMatrix[led.id];
@@ -281,7 +461,7 @@ export default function DebugOverlay({ state }: DebugOverlayProps) {
           </div>
         </div>
 
-        {/* ── Per-LED Signal Cards ── */}
+        {/* ── Per-LED Signal Cards (JS geometry) ── */}
         <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
           <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
@@ -301,7 +481,12 @@ export default function DebugOverlay({ state }: DebugOverlayProps) {
           </div>
         </div>
 
+        {/* ── Physics Engine Metrics (Python backend) ── */}
+        <PhysicsPanel metrics={physicsMetrics} loading={physicsLoading} />
+
       </div>
     </div>
   );
 }
+
+
