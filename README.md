@@ -130,6 +130,30 @@ $$
 \text{SNR}_{\text{dB}} = 10 \log_{10}\left( \frac{(R \cdot P_{rx})^2}{\sigma^2_{thermal} + \sigma^2_{shot}} \right)
 $$
 
+---
+
+### Module 3: The Communication Engine (DCO-OFDM)
+**Location**: `/backend/VLCL_AI/communication`
+
+Module 3 chains directly onto the Physics Engine. Once the frequency-selective optical channel gain is calculated, the Communication Engine simulates the end-to-end digital signal processing (DSP) required to transmit data via light.
+
+#### 1. DCO-OFDM Modulation
+Visible light requires real and positive signals. The engine employs **Direct Current Biased Optical Orthogonal Frequency Division Multiplexing (DCO-OFDM)**. It maps random bits to QAM constellations, forces Hermitian symmetry on the subcarrier grid to ensure a real-valued time-domain signal, and applies a DC bias to keep the waveform strictly positive before clipping.
+
+#### 2. Digital Transceiver Chain
+* **Transmitter**: QAM Modulation → IFFT → Cyclic Prefix Addition → DC Bias & Clipping.
+* **Channel Interface**: The resulting electrical waveform is passed through the LED's low-pass frequency response model and convolved with the optical multi-path impulse response from Module 2.
+* **Receiver**: ADC Quantization → Synchronization → Cyclic Prefix Removal → FFT → Frequency Domain Equalization (Zero-Forcing or MMSE) → QAM Demodulation.
+
+#### 3. High-Level Telemetry KPIs
+The engine outputs live, real-world communication metrics:
+* **Bit Error Rate (BER)**: Empirical (simulated bit errors) vs Analytical (Shannon bound).
+* **Error Vector Magnitude (EVM)**: Measures the distortion of received QAM symbols on the constellation map.
+* **Peak-to-Average Power Ratio (PAPR)** and **Clipping Ratio**: Evaluates signal distortion caused by the limited dynamic range of the LEDs.
+* **Sum Rate & Spectral Efficiency**: Raw data rates in Mbps and bandwidth efficiency in bps/Hz.
+
+---
+
 ## ⚡ Execution and Interface Commands
 
 The workspace provides workspace-wide scripts via `package.json` to handle installs and builds across both folders:
@@ -237,6 +261,36 @@ npm run build
 │       │   ├── transmitter.py
 │       │   ├── visualization.py
 │       │   └── __init__.py
+│       ├── communication/
+│       │   ├── adc.py
+│       │   ├── ber.py
+│       │   ├── bit_generator.py
+│       │   ├── channel_equalizer.py
+│       │   ├── channel_interface.py
+│       │   ├── config.py
+│       │   ├── constellation.py
+│       │   ├── dco_ofdm.py
+│       │   ├── engine.py
+│       │   ├── evm.py
+│       │   ├── exceptions.py
+│       │   ├── frame.py
+│       │   ├── led_frequency_response.py
+│       │   ├── metrics.py
+│       │   ├── ofdm.py
+│       │   ├── packet.py
+│       │   ├── pre_equalizer.py
+│       │   ├── qam.py
+│       │   ├── rate.py
+│       │   ├── receiver.py
+│       │   ├── snr.py
+│       │   ├── state.py
+│       │   ├── subcarrier.py
+│       │   ├── subcarrier_grid.py
+│       │   ├── subcarrier_group.py
+│       │   ├── synchronization.py
+│       │   ├── transmitter.py
+│       │   ├── visualization.py
+│       │   └── __init__.py
 │       ├── examples/
 │       │   ├── demo_environment.py
 │       │   └── __init__.py
@@ -319,6 +373,34 @@ npm run build
     * `snr.py`: Comprehensive Signal-to-Noise Ratio (SNR) and capacity calculations.
     * `transmitter.py`: Transmitter power array dynamics.
     * `visualization.py`: Python-side plotting tools specific to physics parameters.
+    * `__init__.py`: Module initializer.
+  * `communication/`: Module 3: End-to-end VLC Communication (DCO-OFDM) Engine.
+    * `adc.py`: Analog-to-Digital converter quantization and clipping.
+    * `ber.py`: Bit Error Rate calculations (empirical vs theoretical).
+    * `bit_generator.py`: Generates pseudo-random payloads.
+    * `channel_equalizer.py`: Zero-Forcing (ZF) and Minimum Mean Square Error (MMSE) frequency domain equalizers.
+    * `channel_interface.py`: Bridges the digital signal and the analog physics propagation model.
+    * `config.py`: Module configurations (FFT size, sample rate, bandwidth, CP ratio).
+    * `constellation.py`: QAM constellation generation and normalization.
+    * `dco_ofdm.py`: Handles DC biasing and signal clipping for unipolar LED driving.
+    * `engine.py`: Central `CommunicationEngine` orchestrator that chains all components.
+    * `evm.py`: Error Vector Magnitude (EVM) calculation logic.
+    * `exceptions.py`: Module-specific error definitions.
+    * `frame.py`: Dataclass representations of a single OFDM frame.
+    * `led_frequency_response.py`: First-order low-pass filter modeling of the LED frequency bandwidth limitations.
+    * `metrics.py`: Aggregates the high-level KPIs like sum rate, PAPR, clipping ratio, and EVM.
+    * `ofdm.py`: Core OFDM Modulator and Demodulator using FFT/IFFT and Cyclic Prefix.
+    * `packet.py`: Higher-layer networking definitions.
+    * `pre_equalizer.py`: Transmitter pre-equalization to flatten the channel response beforehand.
+    * `qam.py`: High-level QAM Modem handling Gray coding mapping and demapping.
+    * `rate.py`: Calculates Shannon capacity bounds, effective throughput, and spectral efficiency.
+    * `receiver.py`: Wraps all receive-side DSP (ADC → Sync → OFDM Demod → Equalizer → QAM Demap).
+    * `snr.py`: Communication-specific electrical SNR logic.
+    * `state.py`: Defines the `CommunicationState` data structure returned every frame.
+    * `subcarrier.py`, `subcarrier_grid.py`, `subcarrier_group.py`: Manages the frequency spectrum allocation (Data vs Pilot vs Null).
+    * `synchronization.py`: Simulates symbol timing synchronization.
+    * `transmitter.py`: Wraps all transmit-side DSP (QAM Map → OFDM Mod → DCO Bias).
+    * `visualization.py`: Constellation diagrams and spectrum plotters.
     * `__init__.py`: Module initializer.
   * `examples/`: Example simulation scripts.
     * `demo_environment.py`: Executable Python entry script running the timeline loop for a sample space.
