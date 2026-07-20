@@ -99,6 +99,65 @@ export interface CommunicationMetrics {
   };
 }
 
+// Localization metrics returned by LocalizationEngine (Module 4 — A-DPDOA)
+export interface LocalizationMetrics {
+  simulation_time: number;
+  frame_id: number;
+
+  // 3D coordinates
+  estimated_position: [number, number, number];
+  true_position: [number, number, number];
+
+  // Error metrics
+  errors: {
+    instantaneous_m: number;
+    horizontal_m: number;
+    vertical_m: number;
+    rmse_m: number;
+  };
+
+  // Signal info
+  signals: {
+    frequencies_hz: number[];
+    tone_powers: number[];
+    received_powers: Record<string, number>;
+    localization_snr: Record<string, number>;
+  };
+
+  // Phase measurements
+  measurements: {
+    I: number[];
+    Q: number[];
+    wrapped_phases: number[];
+    unwrapped_phases: number[];
+  };
+
+  // Geometry
+  geometry: {
+    distance_differences: Record<string, number>;
+    used_led_ids: number[];
+    rejected_measurements: string[];
+  };
+
+  // Solver
+  solver: {
+    method: string;
+    iterations: number;
+    cost: number;
+    residual: number[];
+  };
+
+  // Quality
+  quality: {
+    confidence: number;
+    status: string;   // "VALID" | "LOW_CONFIDENCE" | "SOLVER_FAILED" | "INSUFFICIENT_GEOMETRY"
+    calibration_applied: boolean;
+  };
+
+  // Metadata (includes running_stats dict from LocalizationMetrics.get_metrics())
+  metadata: Record<string, unknown>;
+}
+
 export interface SimulationState {
   currentTime: number;
   frameIndex: number;
@@ -128,5 +187,9 @@ export interface SimulationState {
   // Communication engine metrics (Python backend — Module 3)
   commMetrics: CommunicationMetrics | null;
   commLoading: boolean;
+
+  // Localization engine metrics (Python backend — Module 4)
+  localizationMetrics: LocalizationMetrics | null;
+  localizationLoading: boolean;
 }
 

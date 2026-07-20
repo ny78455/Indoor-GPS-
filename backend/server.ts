@@ -308,6 +308,97 @@ print(json.dumps(comm_state.to_summary_dict()))
   });
 
 
+  // API Route: Real-time Localization Engine computation (Module 4 — A-DPDOA)
+  // Chains Physics → LocalizationEngine and returns A-DPDOA position estimate + metrics
+  app.post("/api/localization", (req, res) => {
+    const envState = req.body;
+
+    const isWin = process.platform === "win32";
+    const venvPythonPath = isWin
+      ? path.join(BASE_DIR, "VLCL_AI", ".venv", "Scripts", "python.exe")
+      : path.join(BASE_DIR, "VLCL_AI", ".venv", "bin", "python3");
+    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
+
+    const inlineScript = `
+import sys, os, json
+sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
+from VLCL_AI.environment.state import EnvironmentState
+from VLCL_AI.physics.physics_engine import PhysicsEngine
+from VLCL_AI.localization.engine import LocalizationEngine
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+env_state = EnvironmentState(
+    current_time=data.get("current_time", 0.0),
+    frame_index=data.get("frame_index", 0),
+    fps=data.get("fps", 60.0),
+    receiver_position=data["receiver_position"],
+    receiver_orientation=data["receiver_orientation"],
+    receiver_velocity=data.get("receiver_velocity", [0,0,0]),
+    receiver_acceleration=data.get("receiver_acceleration", [0,0,0]),
+    receiver_angles=data.get("receiver_angles", {"roll":0,"pitch":0,"yaw":0}),
+    led_positions={int(k): v for k,v in data["led_positions"].items()},
+    led_powers={int(k): v for k,v in data["led_powers"].items()},
+    led_active={int(k): v for k,v in data["led_active"].items()},
+    distances={int(k): v for k,v in data["distances"].items()},
+    incident_angles={int(k): v for k,v in data["incident_angles"].items()},
+    irradiance_angles={int(k): v for k,v in data["irradiance_angles"].items()},
+    dc_gains={int(k): v for k,v in data["dc_gains"].items()},
+    visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
+    los_matrix={int(k): v for k,v in data["los_matrix"].items()},
+    blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
+    obstacles=data.get("obstacles", [])
+)
+
+# Step 1: Run Physics Engine to get PhysicsState
+physics_engine = PhysicsEngine()
+physics_state = physics_engine.compute(env_state)
+
+# Step 2: Run Localization Engine
+loc_engine = LocalizationEngine()
+loc_state = loc_engine.step(env_state, physics_state)
+
+# Convert received_powers keys to str for JSON serialisation
+result = loc_state.to_dict()
+def str_keys(d):
+    return {str(k): v for k, v in d.items()} if isinstance(d, dict) else d
+
+result["signals"]["received_powers"] = str_keys(result["signals"]["received_powers"])
+result["signals"]["localization_snr"] = str_keys(result["signals"]["localization_snr"])
+
+print(json.dumps(result))
+`;
+
+    const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_loc_tmp.py");
+    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_loc_input.json");
+
+    try {
+      fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
+      fs.writeFileSync(tmpScript, inlineScript, "utf-8");
+      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+    } catch (e: any) {
+      return res.status(500).json({ error: "Failed to write temp files: " + e.message });
+    }
+
+    exec(
+      `${pythonCmd} "${tmpScript}" "${tmpInput}"`,
+      { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8", LOGURU_LEVEL: "WARNING" }, timeout: 20000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          return res.status(500).json({ error: stderr || error.message });
+        }
+        try {
+          const result = JSON.parse(stdout.trim());
+          res.json({ success: true, localization: result });
+        } catch {
+          res.status(500).json({ error: "Failed to parse localization output", raw: stdout });
+        }
+      }
+    );
+  });
+
+
   app.get("/api/visualization", (req, res) => {
     const htmlPath = path.join(BASE_DIR, "VLCL_AI", "logs", "simulation_3d.html");
     if (fs.existsSync(htmlPath)) {

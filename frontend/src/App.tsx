@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Terminal, Layers, RefreshCw, FileText, Download, Activity, BookOpen, Lightbulb } from "lucide-react";
+import { Terminal, Layers, RefreshCw, FileText, Download, Activity, BookOpen, Lightbulb, MapPin } from "lucide-react";
 
 import { SimulationState, RoomParams, LEDParams, ReceiverParams, ObstacleParams, MobilityParams } from "./types";
 import ThreeCanvas from "./components/ThreeCanvas";
@@ -73,6 +73,7 @@ function ViewLegend() {
     { color: "bg-amber-200", label: "LED Loc cone" },
     { color: "bg-cyan-400", label: "Receiver FOV" },
     { color: "bg-red-700", label: "Obstacle" },
+    { color: "bg-orange-400", label: "Estimated Position (A-DPDOA)" },
   ];
   return (
     <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 backdrop-blur-sm">
@@ -116,6 +117,8 @@ export default function App() {
     physicsLoading: false,
     commMetrics: null,
     commLoading: false,
+    localizationMetrics: null,
+    localizationLoading: false,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("visualizer");
@@ -441,6 +444,67 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
+  // ─── Localization Engine Polling (every 30 frames → ~1.5s) ─────────────────
+  const locFrameRef = useRef(0);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+
+    const POLL_EVERY = 30;
+    locFrameRef.current = (locFrameRef.current + 1) % POLL_EVERY;
+    if (locFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      dc_gains: state.dcGains,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+    };
+
+    setState((prev) => ({ ...prev, localizationLoading: true }));
+
+    fetch("/api/localization", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.localization) {
+          setState((prev) => ({
+            ...prev,
+            localizationMetrics: data.localization,
+            localizationLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, localizationLoading: false }));
+        }
+      })
+      .catch(() => {
+        setState((prev) => ({ ...prev, localizationLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
   // ─── 4. Handlers ──────────────────────────────────────────────────────────
   const handleDownloadZip = () => window.open("/api/export-zip");
 
@@ -626,7 +690,7 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
 
             {/* Center Column: 3D Canvas (50%) */}
             <div className="w-2/4 h-full relative rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-black">
-              <ThreeCanvas state={state} />
+              <ThreeCanvas state={state} localizationMetrics={state.localizationMetrics} />
               <ViewLegend />
             </div>
 
@@ -641,6 +705,8 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
                   physicsLoading={state.physicsLoading}
                   commMetrics={state.commMetrics}
                   commLoading={state.commLoading}
+                  localizationMetrics={state.localizationMetrics}
+                  localizationLoading={state.localizationLoading}
                 />
               </div>
 

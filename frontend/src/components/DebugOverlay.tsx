@@ -8,8 +8,9 @@
  */
 
 import { Cpu, Wifi, ShieldAlert, Navigation, Clock, Signal, CheckCircle2, XCircle, EyeOff, Zap, Activity, AlertCircle, Loader } from "lucide-react";
-import { SimulationState, PhysicsMetrics, CommunicationMetrics } from "../types";
+import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics } from "../types";
 import CommunicationPanel from "./CommunicationPanel";
+import LocalizationPanel from "./LocalizationPanel";
 
 interface DebugOverlayProps {
   state: SimulationState;
@@ -17,6 +18,8 @@ interface DebugOverlayProps {
   physicsLoading: boolean;
   commMetrics: CommunicationMetrics | null;
   commLoading: boolean;
+  localizationMetrics: LocalizationMetrics | null;
+  localizationLoading: boolean;
 }
 
 // ─── Stat Row ──────────────────────────────────────────────────────────────
@@ -314,7 +317,7 @@ function PhysicsPanel({ metrics, loading }: { metrics: PhysicsMetrics | null; lo
 }
 
 // ─── Main Export ───────────────────────────────────────────────────────────
-export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading }: DebugOverlayProps) {
+export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading }: DebugOverlayProps) {
   const activeLeds = state.leds.filter(led => state.losMatrix[led.id] && state.visibilityMatrix[led.id]);
 
   return (
@@ -489,6 +492,9 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
 
         {/* ── Communication Engine Metrics (Python backend — Module 3) ── */}
         <CommunicationPanel metrics={commMetrics} loading={commLoading} />
+
+        {/* ── Localization Engine Metrics (Python backend — Module 4) ── */}
+        <LocalizationPanel metrics={localizationMetrics} loading={localizationLoading} />
 
       </div>
     </div>

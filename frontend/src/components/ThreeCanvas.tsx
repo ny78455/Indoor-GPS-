@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { SimulationState } from "../types";
+import { SimulationState, LocalizationMetrics } from "../types";
 
 interface ThreeCanvasProps {
   state: SimulationState;
+  localizationMetrics?: LocalizationMetrics | null;
 }
 
-export default function ThreeCanvas({ state }: ThreeCanvasProps) {
+export default function ThreeCanvas({ state, localizationMetrics }: ThreeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -21,6 +22,8 @@ export default function ThreeCanvas({ state }: ThreeCanvasProps) {
   const raysGroupRef = useRef<THREE.Group | null>(null);
   const trajectoryLineRef = useRef<THREE.Line | null>(null);
   const roomGroupRef = useRef<THREE.Group | null>(null);
+  const locEstGroupRef = useRef<THREE.Group | null>(null);
+  const locErrorLineRef = useRef<THREE.Line | null>(null);
 
   // ─── 1. Initial Scene Setup (runs once) ─────────────────────────────────
   useEffect(() => {
@@ -155,6 +158,43 @@ export default function ThreeCanvas({ state }: ThreeCanvasProps) {
     scene.add(trajLine);
     trajectoryLineRef.current = trajLine;
 
+    // ── Estimated-position marker (Module 4 localization) ───────────────
+    const locGroup = new THREE.Group();
+    locGroup.visible = false;
+
+    // Outer glow ring
+    const ringGeo = new THREE.TorusGeometry(0.22, 0.012, 12, 48);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff7c20, transparent: true, opacity: 0.85 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    locGroup.add(ring);
+
+    // Inner pulsing core sphere
+    const coreMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff9944 })
+    );
+    locGroup.add(coreMesh);
+
+    // Second outer ring (cross-axis)
+    const ring2 = new THREE.Mesh(
+      new THREE.TorusGeometry(0.22, 0.007, 8, 48),
+      new THREE.MeshBasicMaterial({ color: 0xff9944, transparent: true, opacity: 0.45 })
+    );
+    ring2.rotation.z = Math.PI / 2;
+    locGroup.add(ring2);
+
+    scene.add(locGroup);
+    locEstGroupRef.current = locGroup;
+
+    // Error line from estimated to true position
+    const errLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({ color: 0xff7c20, dashSize: 0.06, gapSize: 0.04, opacity: 0.6, transparent: true })
+    );
+    scene.add(errLine);
+    locErrorLineRef.current = errLine;
+
     // Resize handler
     const onResize = () => {
       if (!container || !rendererRef.current || !cameraRef.current) return;
@@ -166,11 +206,18 @@ export default function ThreeCanvas({ state }: ThreeCanvasProps) {
     };
     window.addEventListener("resize", onResize);
 
-    // Render loop
+    // Render loop — includes estimated-position pulse animation
     let animId: number;
+    let tick = 0;
     const animate = () => {
       animId = requestAnimationFrame(animate);
+      tick += 0.04;
       controls.update();
+      // Pulse the localization marker core
+      if (locGroup.visible && locGroup.children[1]) {
+        const s = 1.0 + 0.25 * Math.sin(tick * 3.0);
+        locGroup.children[1].scale.setScalar(s);
+      }
       renderer.render(scene, camera);
     };
     animate();
@@ -432,6 +479,36 @@ export default function ThreeCanvas({ state }: ThreeCanvasProps) {
       });
     }
   }, [state.receiver, state.trajectoryPoints, state.leds, state.losMatrix, state.visibilityMatrix, state.blockingObstacles, state.obstacles]);
+
+  // ─── 6. Localization Estimated Position Marker ───────────────────────────
+  useEffect(() => {
+    const locGroup = locEstGroupRef.current;
+    const errLine = locErrorLineRef.current;
+
+    if (!locGroup) return;
+
+    if (!localizationMetrics || localizationMetrics.quality.status === "SOLVER_FAILED") {
+      locGroup.visible = false;
+      if (errLine) errLine.visible = false;
+      return;
+    }
+
+    // Python [x, y, z_height] → Three.js [x, z_height, y]
+    const ep = localizationMetrics.estimated_position;
+    const tp = localizationMetrics.true_position;
+
+    locGroup.position.set(ep[0], ep[2], ep[1]);
+    locGroup.visible = true;
+
+    // Error line between estimated and true position
+    if (errLine) {
+      const estVec = new THREE.Vector3(ep[0], ep[2], ep[1]);
+      const trueVec = new THREE.Vector3(tp[0], tp[2], tp[1]);
+      errLine.geometry.setFromPoints([estVec, trueVec]);
+      errLine.computeLineDistances();
+      errLine.visible = true;
+    }
+  }, [localizationMetrics]);
 
   return (
     <div
