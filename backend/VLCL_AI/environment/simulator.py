@@ -5,8 +5,8 @@ from loguru import logger
 from .state import EnvironmentState
 from .scene import Scene
 from .mobility import MobilityEngine
-from VLCL_AI.physics.physics_engine import PhysicsEngine
-from dataclasses import replace
+# NOTE: PhysicsEngine import removed (M1-ENV-001) — Module 1 does not own physics.
+# Callers (pipeline orchestrator) must separately import and call PhysicsEngine.
 
 class EventDispatcher:
     """Dispatches environment events to registered subscriber callback hooks."""
@@ -95,15 +95,23 @@ class VLCLSimulator:
     """
     Primary orchestrator of the Integrated VLCL system simulator.
     Integrates Scene, Clock, Mobility, and Events.
+
+    ARCHITECTURAL BOUNDARY (Module 1):
+    ====================================
+    VLCLSimulator produces EnvironmentState (geometry only).
+    Callers that need physics must separately call PhysicsEngine.compute(env_state).
+    VLCLSimulator itself does NOT call PhysicsEngine (M1-ENV-001: removed dead coupling).
     """
-    def __init__(self, scene: Scene, mobility_engine: MobilityEngine, 
+    def __init__(self, scene: Scene, mobility_engine: MobilityEngine,
                  clock: SimulationClock = None):
         self.scene = scene
         self.mobility_engine = mobility_engine
         self.clock = clock if clock else SimulationClock()
         self.events = EventDispatcher()
-        self.physics = PhysicsEngine()
-        
+        # NOTE: PhysicsEngine removed from VLCLSimulator (M1-ENV-001/M1-ENV-002).
+        # Module 1 (VLCLSimulator) produces geometry state only.
+        # Module 2 (PhysicsEngine) is called separately by the pipeline orchestrator.
+
         logger.info("VLCL Simulator engine initiated.")
 
     def start(self):
@@ -120,23 +128,26 @@ class VLCLSimulator:
         """
         Advances the simulation by one clock tick.
         Updates physical positions, recalculates LOS blockages, and captures snapshot state.
+
+        Returns EnvironmentState with geometry only (no channel gain, no physics).
+        Callers must call PhysicsEngine.compute(state) separately for physics quantities.
         """
         dt = self.clock.tick()
-        
+
         # 1. Update positions in scene
         if dt > 0:
             self.scene.update(dt, self.mobility_engine)
             self.events.dispatch("receiver_moved", self.scene.receiver.position)
-            
-        # 2. Recalculate physical and geometric parameters
+
+        # 2. Recalculate geometric parameters
         metrics = self.scene.get_geometric_metrics()
-        
-        # 3. Form and return the immutable EnvironmentState snapshot
+
+        # 3. Form and return the immutable EnvironmentState snapshot (geometry only)
         state = EnvironmentState(
             current_time=self.clock.simulation_time,
             frame_index=self.clock.frame_index,
             fps=self.clock.fps,
-            
+
             receiver_position=self.scene.receiver.position.tolist(),
             receiver_orientation=self.scene.receiver.orientation.tolist(),
             receiver_velocity=self.scene.receiver.velocity.tolist(),
@@ -146,31 +157,43 @@ class VLCLSimulator:
                 "pitch": self.scene.receiver.pitch,
                 "yaw": self.scene.receiver.yaw
             },
-            
+
             led_positions={led_id: led.position.tolist() for led_id, led in self.scene.led_array.leds.items()},
             led_powers={led_id: led.power for led_id, led in self.scene.led_array.leds.items()},
             led_active={led_id: led.active for led_id, led in self.scene.led_array.leds.items()},
-            
+
+            # INT-001: LED geometry primitives needed by Module 2
+            led_orientations=metrics["led_orientations"],
+            led_beam_angles=metrics["led_beam_angles"],
+
             distances=metrics["distances"],
-            incident_angles=metrics["incident_angles"],
-            irradiance_angles=metrics["irradiance_angles"],
-            dc_gains=metrics["dc_gains"],
-            
+            # M1-ENV-ANGLE-001: angles are now in radians
+            incident_angles_rad=metrics["incident_angles_rad"],
+            irradiance_angles_rad=metrics["irradiance_angles_rad"],
+            # dc_gains REMOVED (M1-ENV-002) — use PhysicsState.los_gains
+
             visibility_matrix=metrics["visibility_matrix"],
             los_matrix=metrics["los_matrix"],
             blocking_obstacles=metrics["blocking_obstacles"],
-            
+
+            # INT-001: room dimensions from Scene.room
+            room_dims=[self.scene.room.width, self.scene.room.length, self.scene.room.height],
+
             obstacles=[obs.to_dict() for obs in self.scene.obstacles.values()]
         )
-        
-        # Compute physics
-        self.physics.compute(state)
-        state = replace(state, physics=self.physics.export())
-        
+
         return state
 
     def get_state(self) -> EnvironmentState:
-        """Force captures a state snapshot of the current frame without advancing time."""
+        """
+        Captures a geometry state snapshot of the current frame without advancing time.
+
+        Returns EnvironmentState with geometry only.
+        Callers that need physics must call PhysicsEngine.compute(state) after this.
+
+        M1-ENV-001: The previously unreachable physics code (lines 197-198 after the return)
+        has been REMOVED. Physics is NOT performed inside Module 1.
+        """
         metrics = self.scene.get_geometric_metrics()
         return EnvironmentState(
             current_time=self.clock.simulation_time,
@@ -184,15 +207,21 @@ class VLCLSimulator:
             led_positions={lid: led.position.tolist() for lid, led in self.scene.led_array.leds.items()},
             led_powers={lid: led.power for lid, led in self.scene.led_array.leds.items()},
             led_active={lid: led.active for lid, led in self.scene.led_array.leds.items()},
+            # INT-001
+            led_orientations=metrics["led_orientations"],
+            led_beam_angles=metrics["led_beam_angles"],
             distances=metrics["distances"],
-            incident_angles=metrics["incident_angles"],
-            irradiance_angles=metrics["irradiance_angles"],
-            dc_gains=metrics["dc_gains"],
+            # M1-ENV-ANGLE-001: radians
+            incident_angles_rad=metrics["incident_angles_rad"],
+            irradiance_angles_rad=metrics["irradiance_angles_rad"],
+            # dc_gains REMOVED (M1-ENV-002)
             visibility_matrix=metrics["visibility_matrix"],
             los_matrix=metrics["los_matrix"],
             blocking_obstacles=metrics["blocking_obstacles"],
+            # INT-001
+            room_dims=[self.scene.room.width, self.scene.room.length, self.scene.room.height],
             obstacles=[obs.to_dict() for obs in self.scene.obstacles.values()]
         )
-        
-        self.physics.compute(state)
-        return replace(state, physics=self.physics.export())
+        # M1-ENV-001: Removed dead code that was here (self.physics.compute / replace).
+        # Physics is performed by the caller, not by Module 1's VLCLSimulator.
+

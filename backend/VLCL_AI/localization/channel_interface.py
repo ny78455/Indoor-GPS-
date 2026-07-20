@@ -33,10 +33,14 @@ class ReceivedLocalizationSignal:
 
 class LocalizationChannelInterface:
     """Interfaces between Module 2 (Physics Engine) and Module 4 (Localization)."""
-    
-    def __init__(self, enable_noise: bool = True, channel_mode: str = "los_only"):
+
+    def __init__(self, enable_noise: bool = True, channel_mode: str = "los_only",
+                 rx_bandwidth: float = 50.0e6):
         self.enable_noise = enable_noise
-        self.channel_mode = channel_mode # "los_only" or "multipath"
+        self.channel_mode = channel_mode  # "los_only" or "multipath"
+        # M4-LOC-006: configurable bandwidth; was hardcoded in apply_channel()
+        # Default 50 MHz retained for backward compatibility
+        self.rx_bandwidth = rx_bandwidth
 
     def apply_channel(
         self,
@@ -65,8 +69,9 @@ class LocalizationChannelInterface:
             noise_var_wide = 0.0
             
         # Get photodiode parameters from env_state or physics_state
-        # TIA bandwidth: default to 50 MHz if not specified
-        rx_bandwidth = 50.0e6
+        # M4-LOC-006: rx_bandwidth sourced from config; was hardcoded 50.0e6
+        # Default retained as 50 MHz until caller passes explicit config
+        rx_bandwidth = self.rx_bandwidth
         noise_var_inband = noise_var_wide * (bp_bandwidth_hz / rx_bandwidth) if noise_var_wide > 0 else 0.0
         
         received_powers = {}
@@ -99,9 +104,28 @@ class LocalizationChannelInterface:
                     gain = gains_source.get(led_id, 0.0)
                     delay = physics_state.propagation_times.get(led_id, 0.0)
                     is_los = env_state.los_matrix.get(led_id, True)
-                    
-                    # Accumulate physically
-                    # s_i_rx(t) = sqrt(P_tx) * gain * sin(omega * (t - delay) + initial_phase)
+
+                    # SIGN CONVENTION (M4-LOC-008)
+                    # -----------------------------------------------------------------
+                    # We apply propagation delay as s(t - tau), giving phase: -omega*tau
+                    # This is standard physics convention: s(t-tau) <=> e^{-j*omega*tau}
+                    #
+                    # Paper Eq.(5)/(6) writes received phase as +omega*tau.
+                    # This is a notation difference, NOT a physics difference.
+                    # The paper's hardware naturally inverts the sign depending on
+                    # which side of the measurement is called "reference."
+                    #
+                    # Consequence for position_solver.py:
+                    #   theta_measured = -theta_paper
+                    #   A_code = -A_paper * (2*pi/c)  [see position_solver._build_coefficient_matrix]
+                    #   Net: A_code * delta_d = theta_measured is CORRECT
+                    #
+                    # !!! WARNING !!!
+                    # Do NOT "fix" this sign to match the paper literal notation
+                    # without simultaneously changing position_solver.py.
+                    # The two files form a compensating pair.
+                    # Protected by regression test T-M4-004 / T-M4-006.
+                    # -----------------------------------------------------------------
                     tone_rx += np.sqrt(pwr_tx) * gain * np.sin(omega * (t - delay) + frame.initial_phase)
                     eff_gain += gain
                     delay_sum += delay

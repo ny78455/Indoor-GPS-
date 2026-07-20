@@ -1,9 +1,9 @@
-# position_solver.py
 import numpy as np
 from scipy.optimize import least_squares
 from typing import List, Dict, Any, Tuple, Optional
 from VLCL_AI.localization.exceptions import SolverError
 from VLCL_AI.localization.frequency_plan import LocalizationFrequencyPlan
+from VLCL_AI.physics.constants import SPEED_OF_LIGHT  # M2-PHY-005: no re-literaling of physical constants
 
 class DistanceDifferenceSolver:
     """Solves the linear system relating DPD phases to LED distance differences."""
@@ -27,10 +27,35 @@ class DistanceDifferenceSolver:
         Constructs the 3 x (N-1) coefficient matrix A programmatically.
         The system of equations is: A * delta_d = theta
         where delta_d = [d_21, d_31, ..., d_N1]^T is the vector of distance differences.
+
+        SIGN CONVENTION (cross-ref: localization/channel_interface.py::apply_channel)
+        -----------------------------------------------------------------------
+        channel_interface.py applies delay as: received_phase = -omega * tau
+        (standard physics convention: s(t-tau) <=> e^{-j*omega*tau})
+
+        Paper Eq.(5)/(6) writes phase as +omega*tau — a notation difference,
+        NOT a physics error. The paper's hardware is agnostic to sign convention
+        as long as it is applied consistently.
+
+        Consequence:
+          theta_measured = -theta_paper  (our phases are negated relative to paper)
+          A_code = -A_paper * (2*pi/c)   (this explicit negation below)
+
+        Net effect:
+          A_code * delta_d = theta_measured
+          (-A_paper)*(2pi/c) * delta_d = -theta_paper
+          => A_paper*(2pi/c) * delta_d = theta_paper  [CORRECT — matches paper Eq.16]
+
+        !!! WARNING !!!
+        Do NOT "fix" the sign in only ONE of the two files.
+        If channel_interface.py sign changes, A_code sign must also change.
+        This invariant is enforced by regression test T-M4-004 / T-M4-006.
+        -----------------------------------------------------------------------
         """
         # A shape is (3, N - 1)
         self.A = np.zeros((3, self.N - 1), dtype=np.float64)
-        c = 299792458.0
+        # Req: M2-PHY-005 — use canonical constant, not literal
+        c = SPEED_OF_LIGHT
         
         # Differential equations multipliers
         # Eq 1: Tone 1 (+f1), Tone 2 (-2f2), Tone 3 (+f3)

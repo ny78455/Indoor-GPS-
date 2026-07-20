@@ -1,0 +1,162 @@
+# paper_reference.yaml
+# ============================================================
+# PAPER-REPRODUCTION CONFIGURATION
+# Source: Yang et al., "An Advanced Integrated Visible Light
+#         Communication and Localization System,"
+#         IEEE Trans. Commun., vol. 71, no. 12, Dec. 2023.
+#
+# PROVENANCE RULES:
+#   [PAPER-Sec.IV]    = directly stated in Section IV
+#   [PAPER-Sec.II]    = stated in system model / Section II
+#   [PAPER-FIG]       = read from figure axis/caption
+#   [NOT_IN_PAPER]    = not given; documented assumption used
+#   [PAPER_AMBIGUITY] = paper text appears inconsistent; see note
+#
+# DO NOT modify this file for experimentation.
+# Use configs/default.yaml for general simulation.
+# ============================================================
+
+# -------------------------------------------------------------------
+# ROOM GEOMETRY
+# -------------------------------------------------------------------
+room:
+  # [NOT_IN_PAPER] Paper gives coverage volume ~22.5 m³ but not
+  # explicit W x L x H dimensions. Using 5x5x3 as a reasonable
+  # representative volume (5*5*3 = 75 m³; paper's 22.5 m³ may
+  # refer to the effective illuminated volume, not the room).
+  # PAPER_AMBIGUITY: needs confirmation from authors.
+  width: 5.0      # m (assumed)
+  length: 5.0     # m (assumed)
+  height: 3.0     # m (assumed)
+
+# -------------------------------------------------------------------
+# LED ARRAY
+# -------------------------------------------------------------------
+leds:
+  count: 4  # [PAPER-Sec.II-A] 4 ceiling-mounted LEDs
+
+  # [PAPER-Sec.IV] LED positions as listed. NOTE: The paper's
+  # Section IV position list contains an apparent duplicate:
+  # LED 1 and LED 3 are both given as (-0.4, 0.4, 1.35).
+  # This is almost certainly a typographic error in the paper.
+  # PAPER_AMBIGUITY: Using (0.4, 0.4, 1.35) for LED 2 as the
+  # most geometrically plausible correction (symmetric 4-LED layout).
+  # Needs: published erratum or authors' dataset to resolve definitively.
+  - id: 1
+    position: [-0.4,  0.4, 1.35]   # [PAPER-Sec.IV]
+    orientation: [0.0, 0.0, -1.0]  # downward-pointing ceiling mount
+    beam_angle_deg: 60.0            # [NOT_IN_PAPER] standard value
+    power_w: 1.0                    # [NOT_IN_PAPER] see note below
+
+  - id: 2
+    position: [ 0.4,  0.4, 1.35]   # [PAPER_AMBIGUITY] assumed, see above
+    orientation: [0.0, 0.0, -1.0]
+    beam_angle_deg: 60.0
+    power_w: 1.0
+
+  - id: 3
+    position: [-0.4, -0.4, 1.35]   # [PAPER-Sec.IV]
+    orientation: [0.0, 0.0, -1.0]
+    beam_angle_deg: 60.0
+    power_w: 1.0
+
+  - id: 4
+    position: [ 0.4, -0.4, 1.35]   # [PAPER-Sec.IV] (corrected from apparent dup)
+    orientation: [0.0, 0.0, -1.0]
+    beam_angle_deg: 60.0
+    power_w: 1.0
+
+  # [NOT_IN_PAPER] Optical power in watts: paper does not give the
+  # absolute transmitted power for the LED array used in Section IV
+  # hardware. 1.0 W is a plausible LED driver level. This value
+  # must be revised once the paper's hardware specification is available.
+
+# -------------------------------------------------------------------
+# RECEIVER (PHOTODIODE / APD)
+# -------------------------------------------------------------------
+receiver:
+  # [NOT_IN_PAPER] Exact APD model parameters are not given in the
+  # provided paper excerpt. Values below are reasonable defaults
+  # consistent with Silicon APD datasheets cited in similar VLC papers.
+  fov_deg: 70.0          # [NOT_IN_PAPER] common receiver FOV
+  area_m2: 1.0e-4        # [NOT_IN_PAPER] 1 cm²
+  responsivity_a_per_w: 0.54   # [NOT_IN_PAPER] typical Si APD
+  refractive_index: 1.5  # [NOT_IN_PAPER] optical concentrator
+
+# -------------------------------------------------------------------
+# COMMUNICATION (DCO-OFDM)
+# -------------------------------------------------------------------
+communication:
+  ifft_size: 256             # [PAPER-Sec.IV] N = 256
+  modulation_bandwidth_hz: 20.0e6  # [PAPER-Sec.IV] 20 MHz
+  ber_threshold: 3.8e-3     # [PAPER-Sec.IV] maximum BER target
+
+  # [PAPER-Sec.IV] Modulation orders available for adaptive loading.
+  # Paper uses M ∈ {2, 4, 8, 16, 32, 64} (Section IV Table).
+  # NOTE: 8-QAM and 32-QAM are non-square constellations.
+  # The square-QAM analytical BER formula (Eq.2) does NOT apply to
+  # M=8 or M=32 without a constellation-specific correction.
+  # M3-COM-001 audit gate must resolve this before enabling 8/32.
+  # Only square M supported until audit gate resolves:
+  modulation_orders_square: [4, 16, 64]   # safe square-QAM set
+  modulation_orders_paper: [2, 4, 8, 16, 32, 64]  # paper set (M=8,32 need audit)
+
+  subcarrier_count_data: 120   # N/2 - 1 - L_loc = 128-1-5 = 122 approx; [NOT_IN_PAPER]
+  cyclic_prefix_ratio: 0.25   # [NOT_IN_PAPER] standard choice
+
+# -------------------------------------------------------------------
+# LOCALIZATION (A-DPDOA)
+# -------------------------------------------------------------------
+localization:
+  tone_count: 5             # [PAPER-Sec.II-A] L+1 = 5 tones f1..f5
+  start_frequency_hz: 4.0e6 # [PAPER-Sec.IV] f1 = 4.0 MHz
+  spacing_hz: 0.2e6         # [PAPER-Sec.IV] Δf = 200 kHz
+  # Resulting frequencies: 4.0, 4.2, 4.4, 4.6, 4.8 MHz
+
+  # [PAPER-Sec.II-A] Topology: LED 1 transmits BOTH f1 AND f5.
+  # This means t_{5,k} = t_{1,k} (same propagation path).
+  # This is why paper Eq.(15) uses omega_5*t_1 (not t_5).
+  # Correctly encoded in code's default_mapping = {1:[1], 2:[2], 3:[3], 4:[4], 5:[1]}
+  tone_to_led_map:
+    1: [1]   # f1 from LED 1
+    2: [2]   # f2 from LED 2
+    3: [3]   # f3 from LED 3
+    4: [4]   # f4 from LED 4
+    5: [1]   # f5 from LED 1 (same as f1 — CRITICAL topology detail)
+
+  # [NOT_IN_PAPER] Simulation sample rate. Paper describes analog
+  # hardware (oscilloscope capture); no digital sample rate given.
+  # Nyquist minimum: 2 * 4.8 MHz = 9.6 MHz.
+  # Using 20 MHz to provide a realistic anti-alias filter margin.
+  # This is a DOCUMENTED SIMULATION ASSUMPTION, not a paper value.
+  sample_rate_hz: 20.0e6
+
+# -------------------------------------------------------------------
+# NOISE MODEL
+# -------------------------------------------------------------------
+noise:
+  # [NOT_IN_PAPER] Paper uses lumped δ² for background noise.
+  # The 4-component breakdown (shot/thermal/background/electronic)
+  # is a [PHYSICS-EXTENSION] — a standard, reasonable extension.
+  shot_noise: true
+  thermal_noise: true
+  background_noise: true
+  electronic_noise: true
+  ambient_temperature_k: 298.15  # [NOT_IN_PAPER] 25°C standard
+
+# -------------------------------------------------------------------
+# VALIDATED EQUATIONS (for traceability)
+# -------------------------------------------------------------------
+# Paper Eq.(1): gamma_{k,n}^co = mu^2 * (sum_i sqrt(P_{n,i}) * H_{i,n,k})^2 / delta^2
+#   Status: M3-COM-002 OPEN — missing sqrt in current implementation
+#
+# Paper Eq.(2): BER = (sqrt(M)-1)/(sqrt(M)*log2(sqrt(M))) * erfc(sqrt(3*gamma/(2*(M-1))))
+#   Status: VERIFIED CORRECT (algebraically identical to code implementation)
+#
+# Paper Eq.(3): R_k = B_sub * sum_n rho_{k,n} * log2(M_n)
+#   Status: VERIFIED CORRECT
+#
+# Paper Eq.(4)-(16): A-DPDOA signal chain
+#   Status: VERIFIED with documented sign-convention translation
+#   Convention: code uses -omega*tau; paper uses +omega*tau.
+#   Both A_code and theta_measured carry compensating negation -> CORRECT net result.

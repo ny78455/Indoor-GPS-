@@ -105,14 +105,11 @@ class LocalizationEngine:
         
         # 1. Ground truth coords for error evaluation ONLY (Never leaked to solver!)
         p_true = np.array(environment_state.receiver_position)
-        
+
         # 2. Determine room bounds
-        # Check standard default room boundary if not in environment state
-        room_bounds = (5.0, 5.0, 3.0)
-        if hasattr(environment_state, "obstacles"):
-            # Can infer from metadata or custom properties
-            pass
-            
+        # INT-001: sourced from EnvironmentState.room_dims (not hardcoded)
+        room_bounds = tuple(environment_state.room_dims)
+
         # 3. Handle active visible emitters and geometry condition
         visible_leds = [lid for lid, visible in environment_state.visibility_matrix.items() if visible]
         unblocked_leds = [lid for lid, unblocked in environment_state.los_matrix.items() if unblocked]

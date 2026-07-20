@@ -61,63 +61,71 @@ class Scene:
 
     def get_geometric_metrics(self) -> Dict[str, Any]:
         """
-        Computes distances, irradiance, incidence angles, visibility state, 
+        Computes distances, irradiance, incidence angles, visibility state,
         and LOS matrix for all LEDs in the room.
+
+        ANGULAR UNIT CONTRACT (M1-ENV-ANGLE-001):
+          incident_angles_rad and irradiance_angles_rad are in RADIANS.
+          FOV comparisons are made against np.radians(self.receiver.fov)
+          because receiver.fov is stored in degrees (config boundary).
+
+        NOTE: dc_gains field has been REMOVED (M1-ENV-002).
+          H(0) channel gain is exclusively computed by Module 2 (PhysicsEngine).
+          Callers that need channel gain must call PhysicsEngine.compute(env_state).
         """
         distances = {}
-        incidents = {}
-        irradiances = {}
-        dc_gains = {}
+        incidents_rad = {}
+        irradiances_rad = {}
         visibility_matrix = {}
         los_matrix = {}
         blocking_obstacles = {}
-        
+
+        # Pre-convert receiver FOV to radians once (config boundary)
+        rx_fov_rad = np.radians(self.receiver.fov)
+
         for led_id, led in self.led_array.leds.items():
             # 1. Base geometric distance
             dist = GeometryEngine.distance(led.position, self.receiver.position)
             distances[led_id] = float(dist)
-            
-            # 2. Emission and incident angles
-            phi, psi = GeometryEngine.calculate_angles(
+
+            # 2. Emission and incident angles — returned in RADIANS (M1-ENV-ANGLE-001)
+            phi_rad, psi_rad = GeometryEngine.calculate_angles(
                 led.position, led.orientation,
                 self.receiver.position, self.receiver.orientation
             )
-            irradiances[led_id] = float(phi)
-            incidents[led_id] = float(psi)
-            
-            # 3. Base FOV and Cone containment visibility
-            # Check if LED is within Receiver FOV, and Receiver is inside LED beamcone
-            rx_visible = abs(psi) <= self.receiver.fov
-            tx_visible = abs(phi) <= led.fov
+            irradiances_rad[led_id] = float(phi_rad)
+            incidents_rad[led_id] = float(psi_rad)
+
+            # 3. FOV and cone containment visibility
+            # Compare in radians (both sides now in radians — M1-ENV-ANGLE-001)
+            led_fov_rad = np.radians(led.fov)
+            rx_visible = psi_rad <= rx_fov_rad
+            tx_visible = phi_rad <= led_fov_rad
             visibility_matrix[led_id] = bool(rx_visible and tx_visible and led.active)
-            
+
             # 4. Obstacle LOS blockages
             is_los, blocking_obs_id = GeometryEngine.is_visible_los(
                 led.position, self.receiver.position, list(self.obstacles.values())
             )
             los_matrix[led_id] = bool(is_los)
             blocking_obstacles[led_id] = blocking_obs_id if blocking_obs_id else ""
-            
-            # 5. Lambertian DC gain H(0) - factor in blockage and FOV
-            if is_los and rx_visible:
-                gain = GeometryEngine.calculate_lambertian_dc_gain(
-                    led.position, led.orientation, led.lambertian_order,
-                    self.receiver.position, self.receiver.orientation,
-                    self.receiver.fov, self.receiver.apd_size, self.receiver.gain
-                )
-                dc_gains[led_id] = float(gain)
-            else:
-                dc_gains[led_id] = 0.0
-                
+
+            # NOTE: dc_gains (H(0)) computation removed — M1-ENV-002.
+            # Module 2 (PhysicsEngine) is the sole owner of channel gain.
+
         return {
             "distances": distances,
-            "incident_angles": incidents,
-            "irradiance_angles": irradiances,
-            "dc_gains": dc_gains,
+            "incident_angles_rad": incidents_rad,    # RADIANS (M1-ENV-ANGLE-001)
+            "irradiance_angles_rad": irradiances_rad, # RADIANS (M1-ENV-ANGLE-001)
+            # dc_gains REMOVED (M1-ENV-002) — use PhysicsState.los_gains instead
             "visibility_matrix": visibility_matrix,
             "los_matrix": los_matrix,
-            "blocking_obstacles": blocking_obstacles
+            "blocking_obstacles": blocking_obstacles,
+            # INT-001: per-LED primitives for Module 2 consumption
+            "led_orientations": {lid: led.orientation.tolist() for lid, led in self.led_array.leds.items()},
+            "led_beam_angles": {lid: led.beam_angle for lid, led in self.led_array.leds.items()},
         }
+
         
     def render(self) -> Dict[str, Any]:
         """Exports full scene structure specs for interactive Web/Plotly visualization."""

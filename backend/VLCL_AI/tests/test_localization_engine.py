@@ -201,13 +201,19 @@ class TestLocalizationEngine(unittest.TestCase):
             },
             led_powers={1: 20.0, 2: 20.0, 3: 20.0, 4: 20.0},
             led_active={1: True, 2: True, 3: True, 4: True},
+            # INT-001: LED geometry primitives
+            led_orientations={1: [0,0,-1], 2: [0,0,-1], 3: [0,0,-1], 4: [0,0,-1]},
+            led_beam_angles={1: 60.0, 2: 60.0, 3: 60.0, 4: 60.0},
             distances={},
-            incident_angles={},
-            irradiance_angles={},
-            dc_gains={},
+            # M1-ENV-ANGLE-001: renamed to _rad
+            incident_angles_rad={},
+            irradiance_angles_rad={},
+            # M1-ENV-002: dc_gains removed
             visibility_matrix={1: True, 2: True, 3: True, 4: True},
             los_matrix={1: True, 2: True, 3: True, 4: True},
             blocking_obstacles={},
+            # INT-001: room dims
+            room_dims=[5.0, 5.0, 3.0],
             obstacles=[]
         )
         
@@ -227,13 +233,17 @@ class TestLocalizationEngine(unittest.TestCase):
             led_positions=env_state.led_positions,
             led_powers=env_state.led_powers,
             led_active=env_state.led_active,
+            led_orientations=env_state.led_orientations,
+            led_beam_angles=env_state.led_beam_angles,
             distances=physics_state.distances,
-            incident_angles=physics_state.incident_angles,
-            irradiance_angles=physics_state.irradiance_angles,
-            dc_gains=physics_state.total_gains,
+            # M1-ENV-ANGLE-001: angles now stored in _rad fields
+            incident_angles_rad=physics_state.incident_angles,
+            irradiance_angles_rad=physics_state.irradiance_angles,
+            # M1-ENV-002: dc_gains removed — use physics_state.los_gains directly
             visibility_matrix={k: (v > 0.0) for k, v in physics_state.los_gains.items()},
             los_matrix={k: (v > 0.0) for k, v in physics_state.los_gains.items()},
             blocking_obstacles=env_state.blocking_obstacles,
+            room_dims=env_state.room_dims,
             obstacles=env_state.obstacles
         )
         

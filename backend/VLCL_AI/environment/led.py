@@ -16,22 +16,18 @@ class LED:
         self.orientation = CoordinateSystem.normalize_vector(orientation)
         self.power = power  # Transmit Optical Power (W)
         self.bias_current = bias_current  # DC bias current (A)
-        self.frequency = frequency  # Subcarrier frequency for localization/communication identification (Hz)
-        self.lambertian_order = lambertian_order  # Lambertian order (m)
-        self.beam_angle = beam_angle  # Semi-angle at half power (degrees)
+        self.frequency = frequency  # Subcarrier frequency for localization/communication (Hz)
+        self.beam_angle = beam_angle  # Semi-angle at half power (degrees) — CONFIG PRIMITIVE
+        # NOTE (M1-ENV-003): lambertian_order is NOT computed in Module 1.
+        #   m = -ln(2)/ln(cos(beam_angle)) is a derived optical quantity owned by Module 2.
+        #   physics/lambertian.py::lambertian_order(beam_angle) is the sole implementation.
+        #   LED stores only beam_angle (the fundamental config parameter).
         self.fov = fov  # Field of View cone angle (degrees)
         self.active = True
         self.communication_enabled = communication_enabled
         self.localization_enabled = localization_enabled
         
-        # Calculate Lambertian order if not specified explicitly
-        if self.lambertian_order <= 1.0 and beam_angle < 90.0:
-            # m = -ln(2) / ln(cos(theta_half))
-            rad_half = np.radians(beam_angle)
-            if np.cos(rad_half) > 0:
-                self.lambertian_order = -np.log(2.0) / np.log(np.cos(rad_half))
-                
-        logger.info(f"Initialized LED {self.id} at {self.position.tolist()} with power {self.power}W (Lambertian Order: {self.lambertian_order:.2f})")
+        logger.info(f"Initialized LED {self.id} at {self.position.tolist()} with power {self.power}W (beam_angle={self.beam_angle}°)")
 
     def turn_on(self):
         self.active = True
@@ -99,8 +95,8 @@ class LED:
             "power": self.power,
             "bias_current": self.bias_current,
             "frequency": self.frequency,
-            "lambertian_order": self.lambertian_order,
             "beam_angle": self.beam_angle,
+            # lambertian_order NOT stored here (M1-ENV-003) — derived by Module 2
             "fov": self.fov,
             "active": self.active,
             "communication_enabled": self.communication_enabled,

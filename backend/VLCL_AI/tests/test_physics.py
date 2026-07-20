@@ -32,17 +32,37 @@ class TestVLCLPhysics(unittest.TestCase):
         self.assertAlmostEqual(irr, 5.0 / np.pi)
 
     def test_los_dc_gain(self):
-        # Directly below, LOS
+        """Verify H(0) for LED directly below, phi=0, psi=0.
+
+        Paper formula: H(0) = (m+1)*A / (2*pi*d^2) * cos^m(phi) * g(psi) * cos(psi)
+        With phi=psi=0: H(0) = (m+1)*A / (2*pi*d^2) * g(0)
+        Concentrator gain at psi=0: g(0) = n^2 / sin^2(FOV)
+
+        NOTE: The previous expected value used g=1.5 (flat lens gain)
+        which was incorrect. The canonical formula is g = n^2/sin^2(FOV).
+        Fixed as part of M1-ENV-ANGLE-001 / M2-PHY-001 audit (Phase B/C).
+        """
+        fov_rad = np.radians(70.0)
+        n = 1.5  # refractive index
+        beam_angle_deg = 60.0
+        from VLCL_AI.physics.lambertian import lambertian_order as m_of_angle
+        m = m_of_angle(beam_angle_deg)
+        A = 1e-4
+        d = 2.0
+
         gain = compute_los_dc_gain(
-            distance=2.0,
+            distance=d,
             irradiance_angle_rad=0.0,
             incident_angle_rad=0.0,
-            beam_angle_deg=60.0,
-            receiver_area=1e-4,
-            fov_rad=np.radians(70.0)
+            beam_angle_deg=beam_angle_deg,
+            receiver_area=A,
+            fov_rad=fov_rad,
+            refractive_index=n
         )
-        expected = (2.0 * 1e-4 / (2 * np.pi * 4.0)) * 1.5  # includes default lens gain of 1.5 in concentrator
-        self.assertAlmostEqual(gain, expected)
+        # Correct expected: g(0) = n^2 / sin^2(FOV), cos^m(0)=1, cos(0)=1
+        g_expected = (n ** 2) / (np.sin(fov_rad) ** 2)
+        expected = ((m + 1) * A / (2 * np.pi * d**2)) * g_expected
+        self.assertAlmostEqual(gain, expected, places=9)
 
     def test_noise_and_snr(self):
         # Test default photodiode and noise

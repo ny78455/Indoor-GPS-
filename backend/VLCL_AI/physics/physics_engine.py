@@ -8,7 +8,7 @@ from VLCL_AI.environment.state import EnvironmentState
 from VLCL_AI.physics.constants import (
     DEFAULT_RESPONSIVITY, DEFAULT_RECEIVER_AREA, DEFAULT_BANDWIDTH, 
     DEFAULT_TRANSIMPEDANCE_GAIN, DEFAULT_AMBIENT_TEMPERATURE, DEFAULT_BACKGROUND_CURRENT,
-    DEFAULT_LENS_GAIN
+    DEFAULT_LENS_GAIN, SPEED_OF_LIGHT
 )
 from VLCL_AI.physics.optical_channel import compute_los_dc_gain
 from VLCL_AI.physics.reflection import compute_nlos_reflection
@@ -87,10 +87,17 @@ class PhysicsEngine:
     def compute(self, env_state: EnvironmentState) -> PhysicsState:
         """
         Executes the full optical & optoelectronic propagation logic using EnvironmentState.
+
+        PHASE C fixes applied:
+        - M2-PHY-001: angles received in radians (M1-ENV-ANGLE-001 fixed source)
+        - M2-PHY-002: beam_angle from env_state.led_beam_angles (not hardcoded)
+        - M2-PHY-003: led_normal from env_state.led_orientations (not hardcoded)
+        - INT-001: room_dims from env_state.room_dims (not hardcoded)
+        - Lambertian order derived in Module 2 from beam_angle (ownership boundary)
         """
         rx_pos = np.array(env_state.receiver_position)
         rx_normal = np.array(env_state.receiver_orientation)
-        
+
         distances = {}
         incident_angles = {}
         irradiance_angles = {}
@@ -104,79 +111,82 @@ class PhysicsEngine:
         voltages = {}
         noise_variances = {}
         snrs = {}
-        
+
         num_leds = len(env_state.led_positions)
-        
-        # Room dimensions for reflection model
-        # Default room size 5.0 x 5.0 x 3.0 m
-        room_dims = [5.0, 5.0, 3.0]
-        
+
+        # INT-001: room dimensions sourced from EnvironmentState (not hardcoded)
+        room_dims = list(env_state.room_dims)
+
         # Step through each LED
         for led_id, led_pos in env_state.led_positions.items():
             led_pos_arr = np.array(led_pos)
             dist = env_state.distances.get(led_id, float(np.linalg.norm(rx_pos - led_pos_arr)))
             distances[led_id] = dist
-            
-            # Record angles
-            inc_ang = env_state.incident_angles.get(led_id, 0.0)
-            irr_ang = env_state.irradiance_angles.get(led_id, 0.0)
-            incident_angles[led_id] = inc_ang
-            irradiance_angles[led_id] = irr_ang
-            
+
+            # M1-ENV-ANGLE-001: angles arrive in RADIANS — no conversion needed
+            # M2-PHY-001: this was the bug site; now resolved by upstream fix
+            inc_ang_rad = env_state.incident_angles_rad.get(led_id, 0.0)
+            irr_ang_rad = env_state.irradiance_angles_rad.get(led_id, 0.0)
+            incident_angles[led_id] = inc_ang_rad
+            irradiance_angles[led_id] = irr_ang_rad
+
             # Compute direct LOS path loss
             is_los = env_state.los_matrix.get(led_id, True)
-            
+
             # Power
-            power = env_state.led_powers.get(led_id, 20.0)
-            beam_angle = 60.0 # Nominal beam half power angle
-            
+            power = env_state.led_powers.get(led_id, 1.0)
+
+            # M2-PHY-002: beam_angle sourced from EnvironmentState (not hardcoded 60.0)
+            beam_angle = env_state.led_beam_angles.get(led_id, 60.0)
+
             los_gain = compute_los_dc_gain(
                 distance=dist,
-                irradiance_angle_rad=irr_ang,
-                incident_angle_rad=inc_ang,
-                beam_angle_deg=beam_angle,
+                irradiance_angle_rad=irr_ang_rad,   # M2-PHY-001: now correctly in radians
+                incident_angle_rad=inc_ang_rad,      # M2-PHY-001: now correctly in radians
+                beam_angle_deg=beam_angle,            # M2-PHY-002: from env_state
                 receiver_area=self.config["receiver_area"],
                 fov_rad=np.radians(self.config["fov"]),
                 refractive_index=self.config["refractive_index"],
                 is_los=is_los
             )
             los_gains[led_id] = los_gain
-            
+
             # Compute NLOS reflections if enabled
             nlos_gain = 0.0
             if self.config["enable_nlos"] and self.config["enable_reflection"]:
+                # M2-PHY-003: LED normal sourced from EnvironmentState (not hardcoded [0,0,-1])
+                led_orientation = env_state.led_orientations.get(led_id, [0.0, 0.0, -1.0])
                 nlos_gain = compute_nlos_reflection(
                     led_pos=led_pos_arr,
-                    led_normal=np.array([0.0, 0.0, -1.0]),
-                    m=1.0, # Default Lambertian emission order for NLOS secondary source
+                    led_normal=np.array(led_orientation),  # M2-PHY-003: per-LED orientation
+                    m=1.0,  # Default for NLOS secondary source; canonical m derived from beam_angle above for LOS
                     rx_pos=rx_pos,
                     rx_normal=rx_normal,
                     rx_area=self.config["receiver_area"],
                     fov_rad=np.radians(self.config["fov"]),
-                    room_dims=room_dims,
+                    room_dims=room_dims,   # INT-001: from env_state
                     num_grid_points=16
                 )
             nlos_gains[led_id] = nlos_gain
-            
+
             # Combine total channel gain
             tot_gain = los_gain + nlos_gain
             total_gains[led_id] = tot_gain
-            
+
             # Received optical power
             rx_pwr = power * tot_gain
             received_powers[led_id] = rx_pwr
-            
-            # Propagation delays
-            c = 299792458.0
-            delay = dist / c if dist > 0 else 0.0
+
+            # Propagation delays — M2-PHY-005: canonical constant from constants.py
+            delay = dist / SPEED_OF_LIGHT if dist > 0 else 0.0
             optical_delays[led_id] = delay
             propagation_times[led_id] = delay
-            
+
             # Photodiode conversion
             pd_out = self.photodiode.process_optical_power(rx_pwr)
             electrical_currents[led_id] = float(pd_out["photo_current"])
             voltages[led_id] = float(pd_out["voltage"])
-            
+
             # Noise
             noise_res = total_noise_variance(
                 signal_current=float(pd_out["photo_current"]),
@@ -188,11 +198,11 @@ class PhysicsEngine:
             )
             noise_var = float(noise_res["total_variance"])
             noise_variances[led_id] = noise_var
-            
+
             # SNR calculation
             snr_res = compute_snr(float(pd_out["photo_current"]), noise_var)
             snrs[led_id] = float(snr_res["electrical_snr_db"])
-            
+
         # Update Channel matrix via ChannelEstimator
         self.channel_estimator.estimate_channel(
             los_gains=list(los_gains.values()),

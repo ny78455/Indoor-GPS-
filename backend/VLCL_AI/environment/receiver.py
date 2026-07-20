@@ -62,23 +62,12 @@ class Receiver:
             self.yaw + delta_yaw
         )
 
-    def receive_signal(self, incident_power: float, incidence_angle: float) -> float:
-        """Calculates optical power incident on the active sensor surface (APD)."""
-        # If incident angle is outside FOV, no signal is received
-        if abs(incidence_angle) > self.fov:
-            return 0.0
-            
-        # P_rx = P_inc * A_apd * cos(psi) * g_concentrator
-        cos_psi = np.cos(np.radians(incidence_angle))
-        received_power = incident_power * self.apd_size * cos_psi * self.gain
-        return max(0.0, received_power)
 
-    def measure_snr(self, signal_power: float) -> float:
-        """Calculates Signal-to-Noise Ratio (SNR) in dB."""
-        if signal_power <= 0:
-            return -100.0
-        snr = (signal_power ** 2) / (self.noise + 1e-30)
-        return 10 * np.log10(snr)
+    # M1-ENV-004: receive_signal() and measure_snr() have been REMOVED.
+    # These were dead code implementing received-power and SNR calculations —
+    # physics quantities exclusively owned by Module 2 (PhysicsEngine).
+    # Use physics/photodiode.py and physics/snr.py for canonical implementations.
+
 
     def to_dict(self) -> Dict[str, Any]:
         return {
