@@ -321,53 +321,58 @@ print(json.dumps(comm_state.to_summary_dict()))
 
     const inlineScript = `
 import sys, os, json
-sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
-from VLCL_AI.environment.state import EnvironmentState
-from VLCL_AI.physics.physics_engine import PhysicsEngine
-from VLCL_AI.localization.engine import LocalizationEngine
+try:
+    sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
+    from VLCL_AI.environment.state import EnvironmentState
+    from VLCL_AI.physics.physics_engine import PhysicsEngine
+    from VLCL_AI.localization.engine import LocalizationEngine
 
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    data = json.load(f)
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-env_state = EnvironmentState(
-    current_time=data.get("current_time", 0.0),
-    frame_index=data.get("frame_index", 0),
-    fps=data.get("fps", 60.0),
-    receiver_position=data["receiver_position"],
-    receiver_orientation=data["receiver_orientation"],
-    receiver_velocity=data.get("receiver_velocity", [0,0,0]),
-    receiver_acceleration=data.get("receiver_acceleration", [0,0,0]),
-    receiver_angles=data.get("receiver_angles", {"roll":0,"pitch":0,"yaw":0}),
-    led_positions={int(k): v for k,v in data["led_positions"].items()},
-    led_powers={int(k): v for k,v in data["led_powers"].items()},
-    led_active={int(k): v for k,v in data["led_active"].items()},
-    distances={int(k): v for k,v in data["distances"].items()},
-    incident_angles={int(k): v for k,v in data["incident_angles"].items()},
-    irradiance_angles={int(k): v for k,v in data["irradiance_angles"].items()},
-    dc_gains={int(k): v for k,v in data["dc_gains"].items()},
-    visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
-    los_matrix={int(k): v for k,v in data["los_matrix"].items()},
-    blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
-    obstacles=data.get("obstacles", [])
-)
+    env_state = EnvironmentState(
+        current_time=data.get("current_time", 0.0),
+        frame_index=data.get("frame_index", 0),
+        fps=data.get("fps", 60.0),
+        receiver_position=data["receiver_position"],
+        receiver_orientation=data["receiver_orientation"],
+        receiver_velocity=data.get("receiver_velocity", [0,0,0]),
+        receiver_acceleration=data.get("receiver_acceleration", [0,0,0]),
+        receiver_angles=data.get("receiver_angles", {"roll":0,"pitch":0,"yaw":0}),
+        led_positions={int(k): v for k,v in data["led_positions"].items()},
+        led_powers={int(k): v for k,v in data["led_powers"].items()},
+        led_active={int(k): v for k,v in data["led_active"].items()},
+        distances={int(k): v for k,v in data["distances"].items()},
+        incident_angles={int(k): v for k,v in data["incident_angles"].items()},
+        irradiance_angles={int(k): v for k,v in data["irradiance_angles"].items()},
+        dc_gains={int(k): v for k,v in data["dc_gains"].items()},
+        visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
+        los_matrix={int(k): v for k,v in data["los_matrix"].items()},
+        blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
+        obstacles=data.get("obstacles", [])
+    )
 
-# Step 1: Run Physics Engine to get PhysicsState
-physics_engine = PhysicsEngine()
-physics_state = physics_engine.compute(env_state)
+    # Step 1: Run Physics Engine to get PhysicsState
+    physics_engine = PhysicsEngine()
+    physics_state = physics_engine.compute(env_state)
 
-# Step 2: Run Localization Engine
-loc_engine = LocalizationEngine()
-loc_state = loc_engine.step(env_state, physics_state)
+    # Step 2: Run Localization Engine
+    loc_engine = LocalizationEngine()
+    loc_state = loc_engine.step(env_state, physics_state)
 
-# Convert received_powers keys to str for JSON serialisation
-result = loc_state.to_dict()
-def str_keys(d):
-    return {str(k): v for k, v in d.items()} if isinstance(d, dict) else d
+    # Convert dict keys to str for JSON serialisation
+    result = loc_state.to_dict()
+    def str_keys(d):
+        return {str(k): v for k, v in d.items()} if isinstance(d, dict) else d
 
-result["signals"]["received_powers"] = str_keys(result["signals"]["received_powers"])
-result["signals"]["localization_snr"] = str_keys(result["signals"]["localization_snr"])
+    result["signals"]["received_powers"] = str_keys(result["signals"]["received_powers"])
+    result["signals"]["localization_snr"] = str_keys(result["signals"]["localization_snr"])
 
-print(json.dumps(result))
+    print(json.dumps(result))
+except Exception as e:
+    import traceback
+    print(json.dumps({"__error__": str(e), "__traceback__": traceback.format_exc()}))
+    sys.exit(1)
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_loc_tmp.py");
@@ -383,16 +388,20 @@ print(json.dumps(result))
 
     exec(
       `${pythonCmd} "${tmpScript}" "${tmpInput}"`,
-      { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8", LOGURU_LEVEL: "WARNING" }, timeout: 20000 },
+      { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8", LOGURU_LEVEL: "WARNING" }, timeout: 30000 },
       (error, stdout, stderr) => {
-        if (error) {
+        if (error && !stdout.trim()) {
           return res.status(500).json({ error: stderr || error.message });
         }
         try {
           const result = JSON.parse(stdout.trim());
+          // Python emitted a caught exception — treat as error
+          if (result.__error__) {
+            return res.status(500).json({ error: result.__error__, traceback: result.__traceback__ });
+          }
           res.json({ success: true, localization: result });
         } catch {
-          res.status(500).json({ error: "Failed to parse localization output", raw: stdout });
+          res.status(500).json({ error: "Failed to parse localization output", raw: stdout.slice(0, 500) });
         }
       }
     );

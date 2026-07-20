@@ -323,15 +323,16 @@ export default function App() {
 
   // ─── Physics Engine Polling (every 10 frames → ~0.5s) ────────────────────
   const physicsFrameRef = useRef(0);
+  const physicsInFlightRef = useRef(false);
   useEffect(() => {
     if (!state.isPlaying) return;
+    if (physicsInFlightRef.current) return; // skip if previous call still running
 
-    const POLL_EVERY = 10; // frames between physics API calls
+    const POLL_EVERY = 10;
     physicsFrameRef.current = (physicsFrameRef.current + 1) % POLL_EVERY;
     if (physicsFrameRef.current !== 0) return;
     if (Object.keys(state.distances).length === 0) return;
 
-    // Build the payload expected by /api/physics
     const payload = {
       current_time: state.currentTime,
       frame_index: state.frameIndex,
@@ -358,6 +359,7 @@ export default function App() {
       obstacles: state.obstacles,
     };
 
+    physicsInFlightRef.current = true;
     setState((prev) => ({ ...prev, physicsLoading: true }));
 
     fetch("/api/physics", {
@@ -367,6 +369,7 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((data) => {
+        physicsInFlightRef.current = false;
         if (data.success && data.physics) {
           setState((prev) => ({
             ...prev,
@@ -378,15 +381,18 @@ export default function App() {
         }
       })
       .catch(() => {
+        physicsInFlightRef.current = false;
         setState((prev) => ({ ...prev, physicsLoading: false }));
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
-  // ─── Communication Engine Polling (every 30 frames → ~1.5s) ─────────────
+  // ─── Communication Engine Polling (every 30 frames → ~1.5s) ──────────────
   const commFrameRef = useRef(0);
+  const commInFlightRef = useRef(false);
   useEffect(() => {
     if (!state.isPlaying) return;
+    if (commInFlightRef.current) return; // skip if previous call still running
 
     const POLL_EVERY = 30;
     commFrameRef.current = (commFrameRef.current + 1) % POLL_EVERY;
@@ -419,6 +425,7 @@ export default function App() {
       obstacles: state.obstacles,
     };
 
+    commInFlightRef.current = true;
     setState((prev) => ({ ...prev, commLoading: true }));
 
     fetch("/api/communication", {
@@ -428,6 +435,7 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((data) => {
+        commInFlightRef.current = false;
         if (data.success && data.communication) {
           setState((prev) => ({
             ...prev,
@@ -439,17 +447,20 @@ export default function App() {
         }
       })
       .catch(() => {
+        commInFlightRef.current = false;
         setState((prev) => ({ ...prev, commLoading: false }));
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
-  // ─── Localization Engine Polling (every 30 frames → ~1.5s) ─────────────────
+  // ─── Localization Engine Polling (every 60 frames → ~3s) ──────────────────
   const locFrameRef = useRef(0);
+  const locInFlightRef = useRef(false);
   useEffect(() => {
     if (!state.isPlaying) return;
+    if (locInFlightRef.current) return; // skip if previous call still running
 
-    const POLL_EVERY = 30;
+    const POLL_EVERY = 60; // longer interval — localization is compute-heavy
     locFrameRef.current = (locFrameRef.current + 1) % POLL_EVERY;
     if (locFrameRef.current !== 0) return;
     if (Object.keys(state.distances).length === 0) return;
@@ -480,6 +491,7 @@ export default function App() {
       obstacles: state.obstacles,
     };
 
+    locInFlightRef.current = true;
     setState((prev) => ({ ...prev, localizationLoading: true }));
 
     fetch("/api/localization", {
@@ -489,6 +501,7 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((data) => {
+        locInFlightRef.current = false;
         if (data.success && data.localization) {
           setState((prev) => ({
             ...prev,
@@ -500,6 +513,7 @@ export default function App() {
         }
       })
       .catch(() => {
+        locInFlightRef.current = false;
         setState((prev) => ({ ...prev, localizationLoading: false }));
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
