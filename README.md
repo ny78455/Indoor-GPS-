@@ -57,7 +57,7 @@ The application separates UI representation, network capabilities, and raw physi
 
 ## 🔬 Simulation AI Core Architecture
 
-The Python AI core (`/backend/VLCL_AI`) is divided into two highly specialized modules. They work in tandem to create a true digital twin: a fast spatial awareness engine (Module 1), and a rigorous electromagnetic calculation engine (Module 2).
+The Python AI core (`/backend/VLCL_AI`) is divided into four highly specialized modules. They work in tandem to create a true digital twin: a fast spatial awareness engine (Module 1), a rigorous electromagnetic calculation engine (Module 2), an end-to-end communication DSP engine (Module 3), and an advanced A-DPDOA localization engine (Module 4).
 
 ---
 
@@ -151,6 +151,30 @@ The engine outputs live, real-world communication metrics:
 * **Error Vector Magnitude (EVM)**: Measures the distortion of received QAM symbols on the constellation map.
 * **Peak-to-Average Power Ratio (PAPR)** and **Clipping Ratio**: Evaluates signal distortion caused by the limited dynamic range of the LEDs.
 * **Sum Rate & Spectral Efficiency**: Raw data rates in Mbps and bandwidth efficiency in bps/Hz.
+
+---
+
+### Module 4: The Localization Engine (A-DPDOA)
+**Location**: `/backend/VLCL_AI/localization`
+
+Module 4 operates in parallel with Module 3, consuming the physical channel characteristics to estimate the mobile receiver's 3D coordinates.
+
+#### 1. Asynchronous Differential Phase Difference of Arrival (A-DPDOA)
+Unlike standard Time of Arrival (ToA) which requires strict transmitter-receiver clock synchronization, A-DPDOA relies on phase differences between received pilot tones from multiple LEDs. By transmitting distinct frequencies ($f_1, f_2, \dots$) from each LED, the receiver measures the phase of each tone. The phase differences between pairs of LEDs are then converted into distance differences.
+
+#### 2. Signal Processing and Phase Unwrapping
+The engine implements advanced DSP for localization:
+* **Pilot Tone Extraction**: Extracts the complex IQ phase components of specific pilot subcarriers used for localization.
+* **Phase Unwrapping**: Resolves the $2\pi$ phase ambiguity inherent in periodic signals to compute the true flight-time phase delay.
+* **Distance Difference Calculation**: Converts the unwrapped phase difference between two LEDs into a physical distance difference $\Delta d_{ij} = \frac{c}{2\pi f_{ij}} \Delta \phi_{ij}$.
+
+#### 3. Position Solver (Gauss-Newton Optimization)
+Using the distance differences (a hyperbolic geometry problem), the engine employs a non-linear Least Squares optimization algorithm (Gauss-Newton or Levenberg-Marquardt). It iteratively refines an initial guess $(X_0, Y_0, Z_0)$ to find the optimal 3D coordinates $(X, Y, Z)$ that minimize the residual error of the hyperbolic equations.
+
+#### 4. Confidence and Quality Metrics
+The engine provides comprehensive telemetry on the localization quality:
+* **3D Positioning Error & RMSE**: Calculates instantaneous and running root-mean-square errors against the true position.
+* **Confidence Score**: Evaluates the geometric dilution of precision (GDOP) and solver residuals to assign a 0-100% confidence level.
 
 ---
 
@@ -291,12 +315,29 @@ npm run build
 │       │   ├── transmitter.py
 │       │   ├── visualization.py
 │       │   └── __init__.py
+│       ├── localization/
+│       │   ├── calibration.py
+│       │   ├── channel_interface.py
+│       │   ├── config.py
+│       │   ├── engine.py
+│       │   ├── exceptions.py
+│       │   ├── filters.py
+│       │   ├── frequency_plan.py
+│       │   ├── metrics.py
+│       │   ├── phase_estimator.py
+│       │   ├── position_solver.py
+│       │   ├── signal_generator.py
+│       │   ├── state.py
+│       │   ├── validation.py
+│       │   ├── visualization.py
+│       │   └── __init__.py
 │       ├── examples/
 │       │   ├── demo_environment.py
 │       │   └── __init__.py
 │       ├── logs/
 │       │   └── simulation_3d.html
 │       └── tests/
+│           ├── test_localization_engine.py
 │           ├── test_simulation.py
 │           └── __init__.py
 └── frontend/
@@ -311,10 +352,12 @@ npm run build
         ├── types.ts
         └── components/
             ├── CodeViewer.tsx
+            ├── CommunicationPanel.tsx
             ├── ControlPanel.tsx
             ├── DebugOverlay.tsx
             ├── FormulaPanel.tsx
             ├── IllustrationPanel.tsx
+            ├── LocalizationPanel.tsx
             └── ThreeCanvas.tsx
 ```
 
@@ -402,12 +445,29 @@ npm run build
     * `transmitter.py`: Wraps all transmit-side DSP (QAM Map → OFDM Mod → DCO Bias).
     * `visualization.py`: Constellation diagrams and spectrum plotters.
     * `__init__.py`: Module initializer.
+  * `localization/`: Module 4: A-DPDOA Indoor Localization Engine.
+    * `calibration.py`: Pre-computes initial phase offsets and calibration data.
+    * `channel_interface.py`: Bridges the physical multi-path channel with localization pilot tones.
+    * `config.py`: Module configurations (solver parameters, frequencies).
+    * `engine.py`: Central `LocalizationEngine` orchestrator chaining phase estimation and position solving.
+    * `exceptions.py`: Module-specific error definitions for localization failures.
+    * `filters.py`: Signal filtering for precise phase extraction.
+    * `frequency_plan.py`: Assigns distinct pilot frequencies to different LEDs.
+    * `metrics.py`: Aggregates positioning errors, RMSE, and confidence scores.
+    * `phase_estimator.py`: Extracts and unwraps phase data from IQ signals.
+    * `position_solver.py`: Non-linear Least Squares (Gauss-Newton) optimization for hyperbolic positioning.
+    * `signal_generator.py`: Generates the transmitted pilot tones.
+    * `state.py`: Defines the `LocalizationState` data structure returned every frame.
+    * `validation.py`: Verifies geometry and line-of-sight requirements for solving.
+    * `visualization.py`: 2D/3D plots of hyperbolic intersections and position estimates.
+    * `__init__.py`: Module initializer.
   * `examples/`: Example simulation scripts.
     * `demo_environment.py`: Executable Python entry script running the timeline loop for a sample space.
     * `__init__.py`: Module initializer.
   * `logs/`: Directory for output logs and generated artifacts.
     * `simulation_3d.html`: Pre-generated interactive 3D plot of the simulation environment.
   * `tests/`: Unit tests for the simulation engine.
+    * `test_localization_engine.py`: Unit tests specifically for the A-DPDOA localization mechanics.
     * `test_simulation.py`: Test suite validating simulation mechanics, ray-tracing, and mathematical calculations.
     * `__init__.py`: Module initializer.
 
@@ -423,8 +483,10 @@ npm run build
   * `types.ts`: TypeScript interface definitions corresponding to the frontend models and backend API structures.
   * `components/`: Reusable React components that make up the UI.
     * `CodeViewer.tsx`: Displays raw code or configuration files with syntax highlighting.
+    * `CommunicationPanel.tsx`: Telemetry dashboard for OFDM communication KPIs (BER, EVM, SNR).
     * `ControlPanel.tsx`: UI panel for toggling simulation parameters, editing values, and triggering runs.
     * `DebugOverlay.tsx`: Displays real-time logs and debug information in a retro-monospace console.
     * `FormulaPanel.tsx`: Educational component presenting mathematical equations related to VLCL.
     * `IllustrationPanel.tsx`: Renders visual diagrams and graphical explanations for VLCL concepts.
+    * `LocalizationPanel.tsx`: Telemetry dashboard for the A-DPDOA localization engine (estimated position, RMSE).
     * `ThreeCanvas.tsx`: Contains the Three.js scene setup for the interactive 3D digital laboratory rendering.
