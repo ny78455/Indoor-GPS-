@@ -1,0 +1,257 @@
+# receiver.py
+import numpy as np
+from typing import Dict, Any, Tuple, Optional, List
+from VLCL_AI.communication.adc import ADCModel
+from VLCL_AI.communication.ofdm import OFDMDemodulator
+from VLCL_AI.communication.channel_equalizer import ChannelEqualizer
+from VLCL_AI.communication.qam import QAMModem
+from VLCL_AI.communication.led_frequency_response import LEDFrequencyResponse
+from VLCL_AI.localization.phase_estimator import PhaseEstimator, PhaseUnwrapper
+from VLCL_AI.localization.position_solver import PositionSolver, DistanceDifferenceSolver
+from VLCL_AI.physics.physics_engine import PhysicsState
+from VLCL_AI.integrated_vlcl.spectrum_partitioner import SpectrumPartitioner
+from VLCL_AI.integrated_vlcl.power_mapper import MultiLedPowerMapper
+
+class IntegratedVLCLReceiver:
+    """
+    Unified Receiver for Integrated Visible Light Communication and Localization (VLCL).
+    Receives composite signals and divides them into parallel processing branches:
+    1. Communication Branch: Demodulates and decodes bits for each of the K users.
+    2. Localization Branch: Runs A-DPDOA phase estimation and coordinate solving.
+    """
+    
+    def __init__(self,
+        partitioner: SpectrumPartitioner,
+        power_mapper: MultiLedPowerMapper,
+        modem: QAMModem,
+        demodulator: OFDMDemodulator,
+        equalizer: ChannelEqualizer,
+        adc: ADCModel,
+        led_response: LEDFrequencyResponse,
+        phase_estimator: PhaseEstimator,
+        phase_unwrapper: PhaseUnwrapper,
+        position_solver: PositionSolver
+    ):
+        self.partitioner = partitioner
+        self.power_mapper = power_mapper
+        self.modem = modem
+        self.demodulator = demodulator
+        self.equalizer = equalizer
+        self.adc = adc
+        self.led_response = led_response
+        self.phase_estimator = phase_estimator
+        self.phase_unwrapper = phase_unwrapper
+        self.position_solver = position_solver
+        
+        self.fft_size = self.partitioner.grid.fft_size
+
+    def propagate_composite(
+        self,
+        unipolar_signals_dict: Dict[int, np.ndarray],
+        physics_state: PhysicsState
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Propagates the multi-LED transmitted waveforms through the physical channels,
+        superposes them at the photodiode, and adds physical receiver noise.
+        """
+        led_ids = list(unipolar_signals_dict.keys())
+        if not led_ids:
+            return np.array([]), np.array([])
+            
+        n_samples = len(unipolar_signals_dict[led_ids[0]])
+        sample_rate = self.partitioner.grid.sample_rate
+        t = np.arange(n_samples) / sample_rate
+        
+        composite_rx_clean = np.zeros(n_samples, dtype=float)
+        frequencies = np.fft.fftfreq(n_samples, d=1.0 / sample_rate)
+        
+        # 1. Propagate each LED's signal through its frequency-selective channel
+        for led_id, s_tx in unipolar_signals_dict.items():
+            h_optical = physics_state.total_gains.get(led_id, 0.0)
+            h_led = self.led_response.complex_response(frequencies)
+            
+            # Apply continuous propagation delay in frequency domain
+            delay = physics_state.propagation_times.get(led_id, 0.0)
+            phase_delay = np.exp(-1j * 2.0 * np.pi * frequencies * delay)
+            H = h_optical * h_led * phase_delay
+            
+            # FFT propagation
+            X = np.fft.fft(s_tx)
+            Y = X * H
+            rx_led = np.real(np.fft.ifft(Y))
+            
+            composite_rx_clean += rx_led
+            
+        # 2. Add lumped white receiver noise
+        noise_var = np.mean(list(physics_state.noise_variances.values())) if physics_state.noise_variances else 1e-12
+        std_noise = np.sqrt(noise_var)
+        
+        rng = np.random.default_rng()
+        noise = rng.normal(0, std_noise, size=n_samples)
+        composite_rx_noisy = composite_rx_clean + noise
+        
+        return composite_rx_noisy, t
+
+    def process_communication_branch(
+        self,
+        rx_waveform: np.ndarray,
+        transmitted_bits_dict: Dict[int, np.ndarray],
+        physics_state: PhysicsState,
+        modulation_order_dict: Optional[Dict[int, int]] = None
+    ) -> Dict[int, Dict[str, Any]]:
+        """
+        Processes the communication branch for all active LED groups/users:
+        - ADC processing.
+        - AC coupling.
+        - FFT.
+        - Extraction, equalization, constellation slicing, and decoding for each group.
+        """
+        orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}
+        results = {}
+        
+        # 1. ADC quantization
+        digital_waveform = self.adc.process(rx_waveform)
+        
+        # 2. AC Coupling (remove average signal level)
+        ac_waveform = digital_waveform - np.mean(digital_waveform)
+        
+        # 3. Demodulate OFDM to frequency domain
+        rx_symbols_all, freq_grid = self.demodulator.demodulate(ac_waveform)
+        num_frames = freq_grid.shape[0]
+        
+        half_n = self.fft_size // 2
+        sample_rate = self.partitioner.grid.sample_rate
+        
+        # 4. Process each user group
+        for led_id in range(1, self.power_mapper.num_leds + 1):
+            g_id = led_id
+            sc_indices = self.partitioner.comm_groups.get(g_id, [])
+            
+            if len(sc_indices) == 0:
+                continue
+                
+            # Filter for independent positive frequencies assigned to this user
+            independent_pos = sorted([idx for idx in sc_indices if 0 < idx < half_n])
+            num_pos = len(independent_pos)
+            
+            if num_pos == 0:
+                continue
+                
+            # Extract symbols from subcarriers
+            rx_symbols_user = freq_grid[:, independent_pos].flatten()
+            
+            # Map channel response H_n for these specific subcarriers
+            h_optical = physics_state.total_gains.get(led_id, 0.0)
+            freqs = np.array(independent_pos) * (sample_rate / self.fft_size)
+            h_led = self.led_response.complex_response(freqs)
+            
+            # Add phase rotation due to physical propagation delay
+            delay = physics_state.propagation_times.get(led_id, 0.0)
+            phase_rot = np.exp(-1j * 2.0 * np.pi * freqs * delay)
+            H_n = h_optical * h_led * phase_rot
+            
+            # Tile channel response for all OFDM frames
+            H_n_tiled = np.tile(H_n, num_frames)
+            
+            # Retrieve noise variance for MMSE
+            noise_var = physics_state.noise_variances.get(led_id, 1e-12)
+            
+            # Equalize
+            equalized_symbols = self.equalizer.equalize(
+                rx_symbols=rx_symbols_user,
+                h_channel=H_n_tiled,
+                noise_variance=noise_var,
+                subcarrier_powers=np.ones_like(H_n_tiled)
+            )
+            
+            # Slice constellation and decode
+            mod_order = orders.get(led_id, 16)
+            decoded_bits = self.modem.demodulate(equalized_symbols, mod_order)
+            
+            # Crop to original transmitted payload size
+            tx_bits = transmitted_bits_dict.get(led_id, np.array([], dtype=int))
+            if len(decoded_bits) > len(tx_bits) and len(tx_bits) > 0:
+                decoded_bits = decoded_bits[:len(tx_bits)]
+                
+            # Calculate empirical Bit Error Rate (BER)
+            bit_errors = 0
+            ber = 0.0
+            if len(tx_bits) > 0 and len(decoded_bits) == len(tx_bits):
+                bit_errors = int(np.sum(tx_bits != decoded_bits))
+                ber = float(bit_errors / len(tx_bits))
+                
+            results[led_id] = {
+                "decoded_bits": decoded_bits,
+                "equalized_symbols": equalized_symbols,
+                "bit_errors": bit_errors,
+                "empirical_ber": ber,
+                "num_transmitted_bits": len(tx_bits)
+            }
+            
+        return results
+
+    def process_localization_branch(
+        self,
+        rx_waveform: np.ndarray,
+        t: np.ndarray,
+        physics_state: PhysicsState,
+        room_bounds: Tuple[float, float, float],
+        true_position_only_for_eval: Optional[np.ndarray] = None,
+        prev_phases: Optional[np.ndarray] = None
+    ) -> Dict[str, Any]:
+        """
+        Processes the localization branch:
+        - Dual-differential phase estimation.
+        - Mitigates shifting errors.
+        - Phase unwrapping.
+        - Distance difference solving.
+        - Coordinate solving.
+        """
+        # 1. Run multi-stage bandpass and Hilbert phase estimation on received composite
+        raw_phases, I_vals, Q_vals = self.phase_estimator.process_full_waveform(rx_waveform, t)
+        
+        # 2. Phase unwrapping
+        unwrapped_phases = self.phase_unwrapper.unwrap(raw_phases, prev_phases)
+        
+        # 3. Solve distance differences
+        dd_solver = DistanceDifferenceSolver(
+            frequency_plan=self.partitioner.plan,
+            tone_to_led_map=self.power_mapper.tone_to_led_map
+        )
+        distance_diffs = dd_solver.solve(unwrapped_phases)
+        
+        # 4. Coordinate solving via non-linear PositionSolver
+        # Extract active ceiling LED positions
+        led_positions = {led_id: np.array(pos) for led_id, pos in enumerate([
+            [-0.4, 0.4, 1.35], [0.4, 0.4, 1.35], [-0.4, -0.4, 1.35], [0.4, -0.4, 1.35]
+        ], 1)} # Fallback symmetric layout if not provided
+        
+        pos_solver = PositionSolver(
+            led_positions=led_positions,
+            room_bounds=room_bounds,
+            dimensions="3D",
+            fixed_height_m=0.85,
+            solver_method="trust_region"
+        )
+        
+        p_guess = None
+        p_est, solver_meta = pos_solver.solve(
+            distance_differences=distance_diffs,
+            initial_guess=p_guess,
+            strategy="previous_or_room_center"
+        )
+        
+        # Evaluate errors if true coordinate is provided
+        err_3d = 0.0
+        if true_position_only_for_eval is not None:
+            err_3d = float(np.linalg.norm(p_est - true_position_only_for_eval))
+            
+        return {
+            "estimated_position": p_est.tolist(),
+            "solver_meta": solver_meta,
+            "raw_phases": raw_phases,
+            "unwrapped_phases": unwrapped_phases,
+            "distance_differences": distance_diffs,
+            "error_3d_m": err_3d,
+            "success": solver_meta["success"]
+        }

@@ -32,7 +32,7 @@ class ChannelEqualizer:
         if self.mode == "ZERO_FORCING" or self.mode == "ZF":
             # X_hat = Y / H
             # Guard against tiny coefficients
-            h_safe = np.where(h_abs < 1e-9, 1e-9, h_channel)
+            h_safe = np.where(h_abs < 1e-15, 1e-15, h_channel)
             return rx_symbols / h_safe
             
         elif self.mode == "MMSE":
@@ -41,12 +41,12 @@ class ChannelEqualizer:
                 subcarrier_powers = np.ones_like(h_abs)
                 
             # Avoid division by zero in power
-            p_safe = np.where(subcarrier_powers < 1e-9, 1e-9, subcarrier_powers)
+            p_safe = np.where(subcarrier_powers < 1e-15, 1e-15, subcarrier_powers)
             snr_inv = noise_variance / p_safe
             
             denom = h_abs**2 + snr_inv
             # Guard denom from being too small
-            denom_safe = np.where(denom < 1e-9, 1e-9, denom)
+            denom_safe = np.where(denom < 1e-20, 1e-20, denom)
             
             w = np.conj(h_channel) / denom_safe
             return rx_symbols * w

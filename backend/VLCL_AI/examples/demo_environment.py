@@ -17,6 +17,7 @@ from VLCL_AI.environment.scene import Scene
 from VLCL_AI.environment.mobility import MobilityEngine
 from VLCL_AI.environment.simulator import VLCLSimulator, SimulationClock
 from VLCL_AI.environment.visualization import Offline3DVisualizer
+from VLCL_AI.physics.physics_engine import PhysicsEngine
 
 def run_demo():
     console = Console()
@@ -90,6 +91,7 @@ def run_demo():
     
     clock = SimulationClock(time_step=0.05, speed_factor=1.0)
     simulator = VLCLSimulator(scene=scene, mobility_engine=mobility_engine, clock=clock)
+    physics_engine = PhysicsEngine()
     
     # 4. Instantiate Visualizer
     visualizer = Offline3DVisualizer(room_dims=[room.width, room.length, room.height])
@@ -109,28 +111,29 @@ def run_demo():
     
     for frame in range(1, total_frames + 1):
         # Step simulation physics
-        state = simulator.step()
+        env_state = simulator.step()
+        phys_state = physics_engine.compute(env_state)
         
         # Save trajectory coordinates for 3D visualizer trace map
-        visualizer.add_trajectory_point(state.receiver_position)
+        visualizer.add_trajectory_point(env_state.receiver_position)
         
         # Sample log print every 20 frames to avoid terminal clutter
         if frame % 20 == 0 or frame == 1:
-            blockages_str = ", ".join([f"LED {lid}: blocked" for lid, val in state.visibility_matrix.items() if not state.los_matrix[lid]])
+            blockages_str = ", ".join([f"LED {lid}: blocked" for lid, val in env_state.visibility_matrix.items() if not env_state.los_matrix[lid]])
             if not blockages_str:
                 blockages_str = "None (Full Clear LOS)"
                 
             # Safely get LED 1 and LED 2 data (handles both integer and string IDs) from physics state
-            l1_snr = state.physics.get("snrs", {}).get(1, state.physics.get("snrs", {}).get("1", 0.0))
-            l1_pwr = state.physics.get("received_powers", {}).get(1, state.physics.get("received_powers", {}).get("1", 0.0))
+            l1_snr = phys_state.snrs.get(1, phys_state.snrs.get("1", 0.0))
+            l1_pwr = phys_state.received_powers.get(1, phys_state.received_powers.get("1", 0.0))
             
-            l2_snr = state.physics.get("snrs", {}).get(2, state.physics.get("snrs", {}).get("2", 0.0))
-            l2_pwr = state.physics.get("received_powers", {}).get(2, state.physics.get("received_powers", {}).get("2", 0.0))
+            l2_snr = phys_state.snrs.get(2, phys_state.snrs.get("2", 0.0))
+            l2_pwr = phys_state.received_powers.get(2, phys_state.received_powers.get("2", 0.0))
             
             table.add_row(
-                str(state.frame_index),
-                f"{state.current_time:.2f}",
-                f"[{state.receiver_position[0]:.2f}, {state.receiver_position[1]:.2f}, {state.receiver_position[2]:.2f}]",
+                str(env_state.frame_index),
+                f"{env_state.current_time:.2f}",
+                f"[{env_state.receiver_position[0]:.2f}, {env_state.receiver_position[1]:.2f}, {env_state.receiver_position[2]:.2f}]",
                 f"{l1_snr:.1f}dB / {l1_pwr:.1e}W",
                 f"{l2_snr:.1f}dB / {l2_pwr:.1e}W",
                 blockages_str
@@ -144,10 +147,10 @@ def run_demo():
     
     # 6. Export beautiful offline 3D interactive plot
     html_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "simulation_3d.html")
-    exported_path = visualizer.generate_interactive_html(scene.render(), state, filename=html_file)
+    exported_path = visualizer.generate_interactive_html(scene.render(), env_state, filename=html_file)
     
-    console.print(f"[bold green]✓ Simulation run completed successfully![/bold green]")
-    console.print(f"[bold green]✓ High-fidelity interactive 3D Web Digital Twin exported to: {exported_path}[/bold green]")
+    console.print(f"[bold green]Simulation run completed successfully![/bold green]")
+    console.print(f"[bold green]High-fidelity interactive 3D Web Digital Twin exported to: {exported_path}[/bold green]")
     
 if __name__ == "__main__":
     run_demo()

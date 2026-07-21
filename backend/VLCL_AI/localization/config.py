@@ -19,15 +19,15 @@ class LocalizationConfig:
         
         # Frequency Plan
         fp = loc_data.get("frequency_plan", {})
-        self.fp_count = fp.get("count", 5)
-        self.fp_start_freq = fp.get("start_frequency_hz", 1.0e6)
-        self.fp_spacing = fp.get("spacing_hz", 1.0e5)
+        self.fp_count = fp.get("count", loc_data.get("tone_count", 5))
+        self.fp_start_freq = fp.get("start_frequency_hz", loc_data.get("start_frequency_hz", 1.0e6))
+        self.fp_spacing = fp.get("spacing_hz", loc_data.get("spacing_hz", 1.0e5))
         self.enforce_arithmetic_progression = fp.get("enforce_arithmetic_progression", True)
         
         # Sampling
         samp = loc_data.get("sampling", {})
-        self.sample_rate = samp.get("sample_rate_hz", 10.0e6)
-        self.duration = samp.get("duration_s", 0.01)
+        self.sample_rate = samp.get("sample_rate_hz", loc_data.get("sample_rate_hz", 10.0e6))
+        self.duration = samp.get("duration_s", loc_data.get("duration_s", 0.01))
         
         self.initial_phase = loc_data.get("initial_phase_rad", 0.0)
         

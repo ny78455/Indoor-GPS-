@@ -33,8 +33,7 @@ room:
 # LED ARRAY
 # -------------------------------------------------------------------
 leds:
-  count: 4  # [PAPER-Sec.II-A] 4 ceiling-mounted LEDs
-
+  # [PAPER-Sec.II-A] 4 ceiling-mounted LEDs
   # [PAPER-Sec.IV] LED positions as listed. NOTE: The paper's
   # Section IV position list contains an apparent duplicate:
   # LED 1 and LED 3 are both given as (-0.4, 0.4, 1.35).

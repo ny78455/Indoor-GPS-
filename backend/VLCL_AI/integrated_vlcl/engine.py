@@ -1,0 +1,261 @@
+# engine.py
+import numpy as np
+from typing import Dict, Any, Tuple, Optional, List
+
+from VLCL_AI.environment.state import EnvironmentState
+from VLCL_AI.physics.physics_engine import PhysicsState
+
+from VLCL_AI.communication.config import CommunicationConfig
+from VLCL_AI.communication.bit_generator import BitGenerator
+from VLCL_AI.communication.qam import QAMModem
+from VLCL_AI.communication.subcarrier_grid import SubcarrierGrid
+from VLCL_AI.communication.ofdm import OFDMModulator, OFDMDemodulator
+from VLCL_AI.communication.dco_ofdm import DCOOFDM
+from VLCL_AI.communication.led_frequency_response import LEDFrequencyResponse
+from VLCL_AI.communication.channel_equalizer import ChannelEqualizer
+from VLCL_AI.communication.adc import ADCModel
+
+from VLCL_AI.localization.config import LocalizationConfig
+from VLCL_AI.localization.frequency_plan import LocalizationFrequencyPlan
+from VLCL_AI.localization.phase_estimator import PhaseEstimator, PhaseUnwrapper
+from VLCL_AI.localization.position_solver import PositionSolver
+
+from VLCL_AI.integrated_vlcl.spectrum_partitioner import SpectrumPartitioner
+from VLCL_AI.integrated_vlcl.power_mapper import MultiLedPowerMapper
+from VLCL_AI.integrated_vlcl.transmitter import IntegratedVLCLTransmitter
+from VLCL_AI.integrated_vlcl.receiver import IntegratedVLCLReceiver
+from VLCL_AI.integrated_vlcl.state import IntegratedVLCLState
+
+class IntegratedVLCLEngine:
+    """
+    Unified Master Coordinator for the Integrated VLCL Spectrum & Signal-Group Engine (Module 5).
+    Integrates communication and localization pipelines into a single step-by-step physical-layer execution.
+    """
+    
+    def __init__(self, config_path: Optional[str] = None):
+        self.config_path = config_path
+        
+        # 1. Load Configurations
+        self.comm_config = CommunicationConfig(config_path)
+        
+        # Load localization config, fallback to defaults if config_path is None or invalid
+        if config_path:
+            try:
+                self.loc_config = LocalizationConfig.from_yaml(config_path)
+            except Exception:
+                self.loc_config = LocalizationConfig()
+        else:
+            self.loc_config = LocalizationConfig()
+            
+        self.initialize()
+
+    def initialize(self):
+        """Instantiates all required sub-components and builds integrated transmitter/receiver chains."""
+        cfg_comm = self.comm_config.config
+        
+        # Communication base modules
+        self.bit_generator = BitGenerator(seed=cfg_comm["simulation"]["random_seed"])
+        self.modem = QAMModem()
+        
+        # Base grid (FFT size, bandwidth, sample rate)
+        self.grid = SubcarrierGrid(
+            fft_size=cfg_comm["fft_size"],
+            total_bandwidth=cfg_comm["bandwidth_hz"],
+            sample_rate=cfg_comm["sample_rate_hz"],
+            guard_low=cfg_comm["subcarriers"]["guard_low"],
+            guard_high=cfg_comm["subcarriers"]["guard_high"],
+            pilot_spacing=cfg_comm["subcarriers"]["pilot_spacing"],
+            reserve_localization=True # Always reserve for integrated engine
+        )
+        
+        # Localization frequency plan
+        self.plan = LocalizationFrequencyPlan(
+            start_frequency_hz=self.loc_config.fp_start_freq,
+            spacing_hz=self.loc_config.fp_spacing,
+            count=self.loc_config.fp_count
+        )
+        
+        # 2. Spectrum Partitioner & Power Mapper (Module 5 Core)
+        self.partitioner = SpectrumPartitioner(
+            grid=self.grid,
+            frequency_plan=self.plan,
+            num_comm_groups=self.loc_config.fp_count - 1, # e.g. 4 communication groups
+            guard_width=1
+        )
+        
+        self.power_mapper = MultiLedPowerMapper(
+            partitioner=self.partitioner,
+            num_leds=4,
+            default_comm_power=1.0,
+            default_loc_power=self.loc_config.default_tone_power,
+            tone_to_led_map=self.loc_config.tone_to_led_map
+        )
+        
+        # Modulators / Demodulators
+        self.modulator = OFDMModulator(
+            grid=self.grid,
+            cyclic_prefix_ratio=cfg_comm["cyclic_prefix_ratio"]
+        )
+        self.demodulator = OFDMDemodulator(
+            grid=self.grid,
+            cyclic_prefix_ratio=cfg_comm["cyclic_prefix_ratio"]
+        )
+        self.dco_engine = DCOOFDM(
+            dc_bias_sigma=cfg_comm["dc_bias_sigma"],
+            min_drive_current=cfg_comm["clipping"]["min_value"],
+            max_drive_current=cfg_comm["clipping"]["max_value"] or 2.0,
+            enabled=cfg_comm["clipping"]["enabled"]
+        )
+        self.led_response = LEDFrequencyResponse(
+            model_type=cfg_comm["led_frequency_response"]["model"],
+            cutoff_frequency_hz=cfg_comm["led_frequency_response"]["cutoff_frequency_hz"]
+        )
+        self.adc = ADCModel(
+            sample_rate_hz=cfg_comm["sample_rate_hz"],
+            bit_depth=cfg_comm["adc"]["bits"],
+            full_scale_voltage=cfg_comm["adc"]["full_scale_voltage"],
+            mode=cfg_comm["adc"]["mode"]
+        )
+        self.equalizer = ChannelEqualizer(mode=cfg_comm["receiver"]["equalizer"])
+        
+        # Localization estimators and solvers
+        self.phase_estimator = PhaseEstimator(
+            frequency_plan=self.plan,
+            sample_rate_hz=self.grid.sample_rate,
+            bp_bandwidth_hz=self.loc_config.bp_bandwidth,
+            lp_cutoff_hz=self.loc_config.lp_cutoff,
+            filter_type=self.loc_config.bp_type,
+            filter_order=self.loc_config.bp_order,
+            offline_zero_phase=self.loc_config.offline_zero_phase
+        )
+        self.phase_unwrapper = PhaseUnwrapper(method=self.loc_config.ambiguity_resolution)
+        
+        # Track previous phases across frames for unwrapping
+        self.prev_phases = None
+        
+        # Build receivers and transmitters
+        self.transmitter = IntegratedVLCLTransmitter(
+            partitioner=self.partitioner,
+            power_mapper=self.power_mapper,
+            modem=self.modem,
+            modulator=self.modulator,
+            dco_engine=self.dco_engine,
+            bit_generator=self.bit_generator
+        )
+        
+        # Position solver fallback (updated dynamically in receiver with real LED positions)
+        self.position_solver = PositionSolver(
+            led_positions={},
+            room_bounds=(5.0, 5.0, 3.0),
+            dimensions=self.loc_config.solver_dimensions,
+            fixed_height_m=self.loc_config.fixed_height,
+            solver_method=self.loc_config.solver_method,
+            robust_loss=self.loc_config.solver_robust_loss,
+            max_iterations=self.loc_config.solver_max_iterations,
+            tolerance=self.loc_config.solver_tolerance
+        )
+        
+        self.receiver = IntegratedVLCLReceiver(
+            partitioner=self.partitioner,
+            power_mapper=self.power_mapper,
+            modem=self.modem,
+            demodulator=self.demodulator,
+            equalizer=self.equalizer,
+            adc=self.adc,
+            led_response=self.led_response,
+            phase_estimator=self.phase_estimator,
+            phase_unwrapper=self.phase_unwrapper,
+            position_solver=self.position_solver
+        )
+
+    def reset(self):
+        """Resets engine states."""
+        self.prev_phases = None
+        self.initialize()
+
+    def step(
+        self,
+        env_state: EnvironmentState,
+        physics_state: PhysicsState,
+        bits_dict: Optional[Dict[int, np.ndarray]] = None,
+        modulation_order_dict: Optional[Dict[int, int]] = None
+    ) -> IntegratedVLCLState:
+        """
+        Executes a single step of the integrated physical-layer simulation.
+        
+        1. Generates composite transmitter waveforms.
+        2. Simulates physical channel propagation with LED frequency roll-offs and delay.
+        3. Separates and decodes multi-user communication streams.
+        4. Separates and estimates 3D coordinate localization details.
+        """
+        # Determine modulation orders and bits
+        orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}
+        
+        actual_bits_dict = {}
+        for led_id in range(1, self.power_mapper.num_leds + 1):
+            bits = bits_dict.get(led_id, np.array([], dtype=int)) if bits_dict else np.array([], dtype=int)
+            actual_bits_dict[led_id] = bits
+            
+        # 1. Generate composite unipolar waveforms per LED
+        unipolar_signals, clipping_metrics, tx_bits, freq_grids = self.transmitter.transmit(
+            bits_dict=actual_bits_dict,
+            modulation_order_dict=orders,
+            initial_phase=self.loc_config.initial_phase
+        )
+        
+        # 2. Propagate composite waveforms to the receiver
+        rx_waveform, t = self.receiver.propagate_composite(
+            unipolar_signals_dict=unipolar_signals,
+            physics_state=physics_state
+        )
+        
+        # 3. Process communication branch
+        comm_results = self.receiver.process_communication_branch(
+            rx_waveform=rx_waveform,
+            transmitted_bits_dict=tx_bits,
+            physics_state=physics_state,
+            modulation_order_dict=orders
+        )
+        
+        # 4. Process localization branch
+        p_true = np.array(env_state.receiver_position)
+        room_bounds = tuple(env_state.room_dims)
+        
+        # Dynamically inject active LED geometry to receiver's solver
+        self.receiver.position_solver.led_positions = {
+            int(led_id): np.array(pos) for led_id, pos in env_state.led_positions.items()
+        }
+        self.receiver.position_solver.room_bounds = room_bounds
+        
+        loc_results = self.receiver.process_localization_branch(
+            rx_waveform=rx_waveform,
+            t=t,
+            physics_state=physics_state,
+            room_bounds=room_bounds,
+            true_position_only_for_eval=p_true,
+            prev_phases=self.prev_phases
+        )
+        
+        # Track estimated phases for unwrapping tracking
+        self.prev_phases = loc_results.get("unwrapped_phases")
+        
+        # Compile transmitter performance maps
+        papr_per_led = {led_id: metrics["papr_db"] for led_id, metrics in clipping_metrics.items()}
+        clipping_ratio_per_led = {led_id: metrics["clipping_ratio_pct"] for led_id, metrics in clipping_metrics.items()}
+        dc_bias_per_led = {led_id: metrics["dc_bias"] for led_id, metrics in clipping_metrics.items()}
+        
+        # Assemble composite IntegratedVLCLState
+        state = IntegratedVLCLState(
+            simulation_time=env_state.current_time,
+            communication_results=comm_results,
+            localization_results=loc_results,
+            papr_per_led=papr_per_led,
+            clipping_ratio_per_led=clipping_ratio_per_led,
+            dc_bias_per_led=dc_bias_per_led,
+            metadata={
+                "num_samples": len(rx_waveform),
+                "sample_rate_hz": self.grid.sample_rate
+            }
+        )
+        
+        return state
