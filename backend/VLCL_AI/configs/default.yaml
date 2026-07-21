@@ -2,14 +2,14 @@ room:
   width: 5.0
   length: 5.0
   height: 3.0
-  wall_reflectivity: 0.8
-  floor_reflectivity: 0.2
-  ceiling_reflectivity: 0.5
+  wall_reflectivity: 0.80
+  floor_reflectivity: 0.20
+  ceiling_reflectivity: 0.50
 
 leds:
   - id: 1
-    position: [1.25, 1.25, 3.0]
-    orientation: [0.0, 0.0, -1.0]
+    position: [1.25, 1.25, 3]
+    orientation: [0, 0, -1]
     power: 20.0
     bias_current: 0.5
     frequency: 100000.0
@@ -19,8 +19,8 @@ leds:
     communication_enabled: true
     localization_enabled: true
   - id: 2
-    position: [3.75, 1.25, 3.0]
-    orientation: [0.0, 0.0, -1.0]
+    position: [3.75, 1.25, 3]
+    orientation: [0, 0, -1]
     power: 20.0
     bias_current: 0.5
     frequency: 150000.0
@@ -30,8 +30,8 @@ leds:
     communication_enabled: true
     localization_enabled: true
   - id: 3
-    position: [1.25, 3.75, 3.0]
-    orientation: [0.0, 0.0, -1.0]
+    position: [1.25, 3.75, 3]
+    orientation: [0, 0, -1]
     power: 20.0
     bias_current: 0.5
     frequency: 200000.0
@@ -41,8 +41,8 @@ leds:
     communication_enabled: true
     localization_enabled: true
   - id: 4
-    position: [3.75, 3.75, 3.0]
-    orientation: [0.0, 0.0, -1.0]
+    position: [3.75, 3.75, 3]
+    orientation: [0, 0, -1]
     power: 20.0
     bias_current: 0.5
     frequency: 250000.0
@@ -53,90 +53,36 @@ leds:
     localization_enabled: true
 
 receiver:
-  position: [2.5, 2.5, 0.85]
-  orientation: [0.0, 0.0, 1.0]
-  velocity: [0.2, 0.1, 0.0]
-  acceleration: [0.0, 0.0, 0.0]
+  position: [3.99, 2.38, 0.85]
+  orientation: [0, 0, 1]
+  velocity: [0.04154470140872696, 0.4982710485116105, 0]
+  acceleration: [0, 0, 0]
   fov: 70.0
-  apd_size: 0.0001
-  noise: 1e-14
+  apd_size: 1.0e-4
+  noise: 1.0e-14
   gain: 1.0
   roll: 0.0
   pitch: 0.0
   yaw: 0.0
 
 mobility:
-  type: "circular" # static, linear, circular, random_walk, waypoint, spline
-  speed: 0.5
-  radius: 1.5
+  type: "circular"
+  speed: 0.50
+  radius: 1.50
   center: [2.5, 2.5, 0.85]
-  waypoints:
-    - [1.0, 1.0, 0.85]
-    - [4.0, 1.0, 0.85]
-    - [4.0, 4.0, 0.85]
-    - [1.0, 4.0, 0.85]
 
 obstacles:
   - id: "obs_human"
-    type: "cylinder" # box, cylinder, sphere
-    position: [2.0, 3.0, 0.9]
-    rotation: [0.0, 0.0, 0.0]
-    scale: [0.3, 0.3, 1.8] # radius_x, radius_y, height
+    type: "cylinder"
+    position: [2, 3, 0.9]
+    rotation: [0, 0, 0]
+    scale: [0.3, 0.3, 1.8]
     reflectivity: 0.3
     material: "skin_fabric"
   - id: "obs_desk"
     type: "box"
-    position: [3.5, 2.0, 0.4]
-    rotation: [0.0, 0.0, 0.0]
-    scale: [1.2, 0.8, 0.8] # dx, dy, dz
+    position: [3.5, 2, 0.4]
+    rotation: [0, 0, 0]
+    scale: [1.2, 0.8, 0.8]
     reflectivity: 0.4
     material: "wood"
-
-localization:
-  enabled: true
-  algorithm: A_DPDOA
-  signal_mode: phase_equivalent # phase_equivalent or full_waveform
-  frequency_plan:
-    count: 5
-    start_frequency_hz: 1000000.0 # 1.0 MHz
-    spacing_hz: 100000.0 # 100 kHz
-    enforce_arithmetic_progression: true
-  sampling:
-    sample_rate_hz: 10000000.0 # 10.0 MHz
-    duration_s: 0.01
-  initial_phase_rad: 0.0
-  power:
-    default_tone_power_w: 0.1
-    per_tone_power_w: [0.1, 0.1, 0.1, 0.1, 0.1]
-  channel:
-    mode: los_only # los_only or multipath
-    use_module2_noise: true
-  filters:
-    bandpass:
-      type: butterworth
-      order: 4
-      bandwidth_hz: 20000.0
-    lowpass:
-      type: butterworth
-      order: 4
-      cutoff_hz: 10000.0
-  phase:
-    unwrap: true
-    ambiguity_resolution: physical_constraints
-  solver:
-    method: trust_region
-    dimensions: 3D # 3D or 2D_fixed_height
-    initialization: previous_or_room_center
-    robust_loss: soft_l1
-    max_iterations: 200
-    tolerance: 1.0e-9
-  calibration:
-    enabled: true
-    phase_bias_rad: [0.0, 0.0, 0.0, 0.0, 0.0]
-    delay_bias_s: [0.0, 0.0, 0.0, 0.0, 0.0]
-  confidence:
-    minimum_snr_db: 5.0
-    maximum_condition_number: 1.0e8
-  debug:
-    save_intermediate_signals: false
-

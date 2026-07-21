@@ -1,4 +1,11 @@
 # channel_interface.py
+# Phase F Audit Result: PASS (with one fix applied — see below)
+# Verified:
+#   - H_total(f) = H_optical * H_LED(f): correct frequency-selective composition
+#   - FFT-domain channel application is correct
+#   - Module 2 PhysicsState consumed correctly (total_gains, noise_variances)
+#   - FIX_REQUIRED: rng seeded with fixed seed=42 per call → deterministic non-random noise
+#     Fixed below: rng = np.random.default_rng(seed=None) → truly random each call
 import numpy as np
 from typing import Dict, Any, Union
 from VLCL_AI.physics.physics_engine import PhysicsState
@@ -9,22 +16,20 @@ class CommunicationChannelInterface:
     Consumes PhysicsState from Module 2 and applies physical optical channel gains,
     frequency-selective LED responses, multipath propagation, and physical noise injection.
     """
-    
-    def __init__(self, led_response: LEDFrequencyResponse):
+
+    def __init__(self, led_response: LEDFrequencyResponse, noise_seed: int = None):
         self.led_response = led_response
+        # Phase F fix: seed=None produces truly random noise each call.
+        # Pass a fixed integer only for reproducible unit tests.
+        self.noise_seed = noise_seed
 
     def get_frequency_response(self, physics_state: PhysicsState, led_id: int, frequencies: np.ndarray) -> np.ndarray:
         """
         Computes the complete frequency-selective channel gain H_total(f).
         H_total(f) = H_optical * H_LED(f)
         """
-        # Retrieve direct + reflected optical gain from Module 2 physics state
         h_optical = physics_state.total_gains.get(led_id, 0.0)
-        
-        # Retrieve frequency response of the LED
         h_led = self.led_response.complex_response(frequencies)
-        
-        # Combine optical gain and LED bandwidth response
         return h_optical * h_led
 
     def propagate(
@@ -42,31 +47,25 @@ class CommunicationChannelInterface:
         n_samples = len(tx_waveform)
         if n_samples == 0:
             return tx_waveform
-            
+
         # 1. Transform signal to frequency domain
         X = np.fft.fft(tx_waveform)
-        
-        # Calculate frequency bins for each FFT point
         frequencies = np.fft.fftfreq(n_samples, d=1.0 / sample_rate)
-        
-        # Get frequency-selective channel response
+
+        # Get frequency-selective channel response and apply
         H = self.get_frequency_response(physics_state, led_id, frequencies)
-        
-        # Apply channel response
         Y = X * H
-        
-        # Transform back to time-domain (should be real-valued since H is symmetric for positive/negative frequencies)
+
+        # Transform back to time-domain
         rx_waveform = np.real(np.fft.ifft(Y))
-        
-        # 2. Add Physical noise
-        # Retrieve total physical noise variance (thermal + shot) from Module 2 physics state
+
+        # 2. Add physical noise
         noise_var = physics_state.noise_variances.get(led_id, 1e-12)
-        
-        # Generate Gaussian noise samples
-        # std_noise = sqrt(noise_variance)
-        # Note: if noise_variance is physical, generate corresponding time-domain noise
         std_noise = np.sqrt(noise_var)
-        rng = np.random.default_rng(42)
+
+        # Phase F fix (M3-F-001): seed=None → truly random noise each simulation step.
+        # Previously seeded with 42 → same noise pattern on every call → NOT random.
+        rng = np.random.default_rng(seed=self.noise_seed)
         noise_samples = rng.normal(0, std_noise, size=n_samples)
-        
+
         return rx_waveform + noise_samples

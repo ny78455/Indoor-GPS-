@@ -64,70 +64,100 @@ The Python AI core (`/backend/VLCL_AI`) is divided into four highly specialized 
 ### Module 1: The Environment Simulation Engine
 **Location**: `/backend/VLCL_AI/environment`
 
-This engine acts as the "director" of the digital twin. It manages spatial awareness, configuration states, and bounding-box level interactions. It focuses on the macroscopic geometry of the room and the progression of time.
+This engine acts as the "director" of the digital twin. It owns **geometry and spatial state only** — no optical physics, no channel gains. The canonical data flow is:
+
+```
+EnvironmentSimulator.get_state()
+        │
+        ▼
+EnvironmentState          ← geometry primitives only
+  angles in RADIANS
+  room_dims, led_orientations, led_beam_angles
+        │
+        ▼
+PhysicsEngine.compute(env_state)    ← Module 2 owns all optics
+```
 
 #### 1. Room Geometry and Spatial State
-The indoor space is defined as a 3D bounding box ($W \times L \times H$). The Simulation Engine handles coordinate mapping and tracking all entities (LEDs, receivers, obstacles) within this grid. It uses simple analytic geometry to compute raw distances and directional vectors between any two points.
+The indoor space is defined as a 3D bounding box ($W \times L \times H$). All angular quantities are stored and passed in **radians** — the single canonical unit throughout internal computation. Conversion from configuration degrees to radians occurs exactly once at the environment boundary.
 
-#### 2. Mobility and Trajectory Patterns
-It controls the kinetic movement of the receiver. Based on predefined models (like `RandomWaypoint`, `Linear`, or `Static`), it calculates velocity, acceleration, and updates the receiver's $(x, y, z)$ position on every time step ($dt$).
+The `EnvironmentState` carries geometric primitives used by downstream modules:
+- `incident_angles_rad` — receiver-side incidence angle $\psi$ [rad] per LED
+- `irradiance_angles_rad` — transmitter-side irradiance angle $\phi$ [rad] per LED
+- `room_dims` — $[W, L, H]$ in metres
+- `led_orientations` — unit normal vectors $\hat{n}_{tx,i}$
+- `led_beam_angles` — half-power beam angle $\theta_{1/2}$ in degrees (primitive, unconverted)
 
-#### 3. Bounding-Box Obstacle Intersections
-Physical obstacles (like cylinders representing human researchers or rectangular partitions) are tracked by the simulation engine. It performs primary ray-tracing to test if a 3D line segment (from an LED to a receiver) intersects an obstacle's bounding shape. If intersected, the simulation engine flags a **Line-of-Sight (LOS) blockage** for that specific transmission path.
+> **Architecture rule**: `EnvironmentState` does **not** contain `dc_gains` or `lambertian_order`. Those are computed exclusively in Module 2.
 
-#### 4. Simulation Orchestrator
-The `Simulator` class sits here. It manages the lifecycle loop: stepping through frames, updating mobility, gathering the macroscopic state of the `Scene`, and piping this data into either the frontend visualizer or down into the Physics Engine for deep analysis.
+#### 2. LED Transmitter Primitive
+The `LED` class stores only the **primitive** `beam_angle` (degrees). It does **not** compute the Lambertian order $m$ — that derivation is Module 2's responsibility.
+
+#### 3. Mobility and Trajectory Patterns
+Controls kinematic movement of the receiver. Based on predefined models (`RandomWaypoint`, `Linear`, or `Static`), it calculates velocity, acceleration, and updates the receiver's $(x, y, z)$ position on every time step ($dt$).
+
+#### 4. Bounding-Box Obstacle Intersections
+Physical obstacles (cylinders, rectangular partitions) are tracked. Ray-tracing tests if the line segment from an LED to a receiver intersects an obstacle bounding shape, flagging a **Line-of-Sight (LOS) blockage** for that path.
+
+#### 5. Simulation Orchestrator
+The `VLCLSimulator` class manages the lifecycle loop: stepping through frames, updating mobility, gathering the macroscopic geometric state, and passing it to Module 2 for physics computation.
 
 ---
 
 ### Module 2: The High-Fidelity Physics Engine
 **Location**: `/backend/VLCL_AI/physics`
 
-While Module 1 handles *where* things are, Module 2 handles *how light behaves* between them. The Physics Engine executes advanced electromagnetic calculations to simulate optical wireless communication channels, acting as a rigorous digital twin of physical optoelectronics.
+Module 2 consumes `EnvironmentState` (geometry-only) and performs all optoelectronic calculations. It is the **sole owner** of optical channel gains.
 
-#### 1. Advanced Transmitter Modeling (Ceiling-Mounted LEDs)
-Each LED transmitter acts as a lambertian emitter. The emission radiation profile is characterized by its **Lambertian Order** $m$, calculated from the semi-angle emission beam ($\theta_{1/2}$):
+#### 1. Lambertian Order Derivation
+The Lambertian emission order $m$ is derived **in this module** from the LED's primitive `beam_angle` supplied in `EnvironmentState`:
 
 $$
 m = \frac{-\ln(2)}{\ln(\cos(\theta_{1/2}))}
 $$
 
-The physics engine tracks subcarrier frequency modulation, DC bias, and projects optical radiation down with a specified optical power output ($P_{tx}$).
+Where $\theta_{1/2}$ is the semi-angle at half-power (degrees, converted to radians internally). This derivation never occurs in Module 1.
 
-#### 2. Optoelectronic Receiver Node (Photodiode)
-The mobile photodiode platform translates optical power into electrical signals. It evaluates:
-* **Active Area ($A_{apd}$)**: Physical capture plane size in $m^2$.
-* **Optical Concentrator**: Lenses that amplify incoming signal gain $g(\psi)$ based on the refractive index ($n$).
-* **Optical Filter**: Transmission gain $T_s(\psi)$ for specific wavelengths.
-* **Responsivity ($R$)**: The conversion efficiency (in A/W) of optical power to electrical current, resulting in a photodiode current: $I_{pd} = R \times P_{rx}$.
-
-#### 3. Geometry and Line-Of-Sight Channel Loss
-The Physics Engine calculates the **Lambertian Direct Current Optical Gain ($H(0)$)**:
+#### 2. Geometry and Line-Of-Sight Channel Gain $H(0)$
+Using angles received in **radians** from `EnvironmentState`, Module 2 computes the **Lambertian DC Optical Gain**:
 
 $$
-H(0) = \begin{cases} 
-\frac{(m + 1) A_{apd}}{2\pi d^2} \cos^m(\phi) g(\psi) T_s(\psi) \cos(\psi) & \text{if } 0 \le \psi \le \text{FOV} \\ 
-0 & \text{if } \psi > \text{FOV} 
+H(0) = \begin{cases}
+\dfrac{(m+1)\,A_{apd}}{2\pi d^2} \cos^m(\phi)\; g(\psi)\; T_s(\psi)\; \cos(\psi) & \text{if } 0 \le \psi \le \text{FOV} \\
+0 & \text{if } \psi > \text{FOV}
 \end{cases}
 $$
 
 Where:
-* $d$: Euclidean distance.
-* $\phi$: Angle of irradiance relative to the transmitter normal vector.
-* $\psi$: Angle of incidence relative to the receiver normal vector.
+- $d$: Euclidean distance [m]
+- $\phi$: Irradiance angle from the LED normal (in **radians**, supplied by Module 1)
+- $\psi$: Incidence angle at the receiver normal (in **radians**, supplied by Module 1)
+- $A_{apd}$: Photodiode active area [m²]
+- $T_s(\psi)$: Optical filter transmission gain
 
-#### 4. Multi-path Reflectivity and Raytracing (NLOS)
-The physics engine features a dedicated raytracer that tracks Non-Line-Of-Sight (NLOS) reflections. Using surface reflection coefficients ($\rho_W, \rho_C, \rho_F$), it calculates multi-path propagation and impulse delay spread caused by light bouncing off walls and floors before reaching the receiver, maintaining signal integrity even when primary LOS is blocked.
+**Optical Concentrator Gain** (Snell's law, $\psi$ within FOV):
+$$
+g(\psi) = \frac{n^2}{\sin^2(\text{FOV})}
+$$
 
-#### 5. Noise Models & Signal-to-Noise Ratio (SNR)
-It computes physical environmental noises acting upon the receiver hardware:
-* **Thermal Noise ($\sigma^2_{thermal}$)**: Generated by the receiver's circuitry, dependent on temperature ($T_k$) and bandwidth ($B$).
-* **Shot Noise ($\sigma^2_{shot}$)**: Generated by ambient background light ($P_{bg}$) and the signal itself.
+Where $n$ is the refractive index of the concentrator lens.
 
-The final electrical **Signal-to-Noise Ratio (SNR)** output is calculated in decibels (dB):
+> **Unit contract**: If the angles $\phi$ or $\psi$ are passed in degrees, `cos(15°) ≈ 0.966` is silently interpreted as `cos(15 rad) ≈ −0.76`, producing near-zero gain. Module 2 trusts that Module 1 has already converted to radians — enforced by regression test `T-M1-ANGLE-002`.
+
+#### 3. Optoelectronic Receiver Node
+- **Active Area ($A_{apd}$)**: Physical capture plane size in m²
+- **Concentrator Gain $g(\psi)$**: Amplifies incoming signal based on refractive index $n$ and FOV
+- **Responsivity ($R$)**: Conversion efficiency [A/W] → photodiode current $I_{pd} = R \times P_{rx}$
+
+#### 4. Multi-path Reflectivity and NLOS Gain
+A dedicated raytracer computes first-order NLOS reflection gain by discretising the 6 room surfaces. Each wall element $ds$ acts as a secondary Lambertian emitter ($m=1$). The `room_dims` are sourced from `EnvironmentState.room_dims` — not hardcoded.
+
+#### 5. Noise Models & Signal-to-Noise Ratio
+- **Thermal Noise** $\sigma^2_{th}$: From receiver circuitry, dependent on temperature $T_k$ and bandwidth $B$
+- **Shot Noise** $\sigma^2_{sh}$: From ambient background light $P_{bg}$ and signal current
 
 $$
-\text{SNR}_{\text{dB}} = 10 \log_{10}\left( \frac{(R \cdot P_{rx})^2}{\sigma^2_{thermal} + \sigma^2_{shot}} \right)
+\text{SNR}_{\text{dB}} = 10\log_{10}\!\left(\frac{(R \cdot P_{rx})^2}{\sigma^2_{th} + \sigma^2_{sh}}\right)
 $$
 
 ---
@@ -135,46 +165,101 @@ $$
 ### Module 3: The Communication Engine (DCO-OFDM)
 **Location**: `/backend/VLCL_AI/communication`
 
-Module 3 chains directly onto the Physics Engine. Once the frequency-selective optical channel gain is calculated, the Communication Engine simulates the end-to-end digital signal processing (DSP) required to transmit data via light.
+Module 3 chains onto the Physics Engine. Once frequency-selective optical channel gains are computed, the Communication Engine runs end-to-end DSP to simulate data transmission via light.
 
 #### 1. DCO-OFDM Modulation
-Visible light requires real and positive signals. The engine employs **Direct Current Biased Optical Orthogonal Frequency Division Multiplexing (DCO-OFDM)**. It maps random bits to QAM constellations, forces Hermitian symmetry on the subcarrier grid to ensure a real-valued time-domain signal, and applies a DC bias to keep the waveform strictly positive before clipping.
+VLC requires real, positive signals. The engine uses **DCO-OFDM**: maps bits to **square QAM** constellations (M ∈ {4, 16, 64}), forces Hermitian symmetry to ensure a real-valued IFFT output, and applies a DC bias before clipping.
 
-#### 2. Digital Transceiver Chain
-* **Transmitter**: QAM Modulation → IFFT → Cyclic Prefix Addition → DC Bias & Clipping.
-* **Channel Interface**: The resulting electrical waveform is passed through the LED's low-pass frequency response model and convolved with the optical multi-path impulse response from Module 2.
-* **Receiver**: ADC Quantization → Synchronization → Cyclic Prefix Removal → FFT → Frequency Domain Equalization (Zero-Forcing or MMSE) → QAM Demodulation.
+> **Modulation constraint**: Only square M-QAM (M = 4, 16, 64) is supported. The analytical BER formula does **not** apply to non-square constellations (M = 8, 32). These are explicitly blocked with a `VLCLCommunicationError`.
 
-#### 3. High-Level Telemetry KPIs
-The engine outputs live, real-world communication metrics:
-* **Bit Error Rate (BER)**: Empirical (simulated bit errors) vs Analytical (Shannon bound).
-* **Error Vector Magnitude (EVM)**: Measures the distortion of received QAM symbols on the constellation map.
-* **Peak-to-Average Power Ratio (PAPR)** and **Clipping Ratio**: Evaluates signal distortion caused by the limited dynamic range of the LEDs.
-* **Sum Rate & Spectral Efficiency**: Raw data rates in Mbps and bandwidth efficiency in bps/Hz.
+#### 2. Communication SNR per Subcarrier (Paper Eq. 1)
+
+$$
+\gamma_{k,n}^{co} = \frac{\eta^2\,\mu^2 \left(\displaystyle\sum_{i=1}^{L} \sqrt{P_{n,i}}\; H_{i,n,k}\right)^2}{\sigma^2}
+$$
+
+Where:
+- $P_{n,i}$: Electrical power allocated to subcarrier $n$ at LED $i$ [W]
+- $\sqrt{P_{n,i}}$: Optical amplitude (electrical power → optical field → current)
+- $H_{i,n,k}$: Optical channel gain from LED $i$ to user $k$ on subcarrier $n$
+- $\mu$: Photodiode responsivity [A/W]
+- $\sigma^2$: Total noise variance [A²]
+- $\eta$: System scaling efficiency factor
+
+> **Critical (M3-COM-002)**: The summation is $\sum \sqrt{P}\cdot H$, **not** $\sum P \cdot H$. The square-root reflects that electrical power converts to optical amplitude, not optical power, before the channel gain is applied.
+
+#### 3. Analytical BER — Square M-QAM
+
+$$
+P_b \approx \frac{4}{\log_2 M}\left(1 - \frac{1}{\sqrt{M}}\right) \cdot \frac{1}{2}\operatorname{erfc}\!\left(\sqrt{\frac{3\,\gamma}{2(M-1)}}\right)
+$$
+
+For M = 2 (BPSK): $P_b = \frac{1}{2}\operatorname{erfc}(\sqrt{\gamma})$
+
+The `strict=True` parameter on `BERCalculator.compute_empirical()` raises `VLCLCommunicationError` if the transmitted and received bit sequences have different lengths, catching framing/alignment errors early in validation pipelines.
+
+#### 4. Digital Transceiver Chain
+- **Transmitter**: QAM Modulation → IFFT → Cyclic Prefix Addition → DC Bias & Clipping
+- **Channel**: LED first-order low-pass $H_{LED}(f) = \frac{1}{1 + j f/f_c}$ × optical gain $H(0)$; physical noise sampled with `noise_seed=None` (truly random per call)
+- **Receiver**: ADC → Synchronisation → CP Removal → FFT → ZF/MMSE Equalisation → QAM Demodulation
+
+#### 5. High-Level Telemetry KPIs
+- **BER**: Empirical (bit comparison) and Analytical (erfc formula above)
+- **EVM**: Distortion of received QAM symbols on the constellation
+- **PAPR** and **Clipping Ratio**: LED dynamic range evaluation
+- **Sum Rate & Spectral Efficiency**: Mbps and bps/Hz
 
 ---
 
 ### Module 4: The Localization Engine (A-DPDOA)
 **Location**: `/backend/VLCL_AI/localization`
 
-Module 4 operates in parallel with Module 3, consuming the physical channel characteristics to estimate the mobile receiver's 3D coordinates.
+Module 4 operates in parallel with Module 3, consuming physical channel characteristics to estimate the mobile receiver's 3D coordinates.
 
 #### 1. Asynchronous Differential Phase Difference of Arrival (A-DPDOA)
-Unlike standard Time of Arrival (ToA) which requires strict transmitter-receiver clock synchronization, A-DPDOA relies on phase differences between received pilot tones from multiple LEDs. By transmitting distinct frequencies ($f_1, f_2, \dots$) from each LED, the receiver measures the phase of each tone. The phase differences between pairs of LEDs are then converted into distance differences.
+Unlike ToA (requires clock sync), A-DPDOA measures **phase differences** between pilot tones received from multiple LEDs. Five distinct frequencies $(f_1, \dots, f_5)$ are transmitted; their phase differences are converted to distance differences via:
 
-#### 2. Signal Processing and Phase Unwrapping
-The engine implements advanced DSP for localization:
-* **Pilot Tone Extraction**: Extracts the complex IQ phase components of specific pilot subcarriers used for localization.
-* **Phase Unwrapping**: Resolves the $2\pi$ phase ambiguity inherent in periodic signals to compute the true flight-time phase delay.
-* **Distance Difference Calculation**: Converts the unwrapped phase difference between two LEDs into a physical distance difference $\Delta d_{ij} = \frac{c}{2\pi f_{ij}} \Delta \phi_{ij}$.
+$$
+\Delta d_{ij} = \frac{c}{2\pi f_{ij}}\,\Delta\phi_{ij}
+$$
 
-#### 3. Position Solver (Gauss-Newton Optimization)
-Using the distance differences (a hyperbolic geometry problem), the engine employs a non-linear Least Squares optimization algorithm (Gauss-Newton or Levenberg-Marquardt). It iteratively refines an initial guess $(X_0, Y_0, Z_0)$ to find the optimal 3D coordinates $(X, Y, Z)$ that minimize the residual error of the hyperbolic equations.
+#### 2. Linear System — Equation 16 (Paper)
+The three dual-differential phase measurements form a linear system:
 
-#### 4. Confidence and Quality Metrics
-The engine provides comprehensive telemetry on the localization quality:
-* **3D Positioning Error & RMSE**: Calculates instantaneous and running root-mean-square errors against the true position.
-* **Confidence Score**: Evaluates the geometric dilution of precision (GDOP) and solver residuals to assign a 0-100% confidence level.
+$$
+\mathbf{A} \cdot \boldsymbol{\delta d} = \boldsymbol{\theta}_{measured}
+$$
+
+Where $\mathbf{A}$ is a $3 \times (N-1)$ coefficient matrix built from tone frequencies and LED assignments.
+
+**Sign Convention (mandatory cross-file invariant)**:
+
+| Location | Convention |
+|---|---|
+| `channel_interface.py` | `received_phase = −ω·τ` (standard physics: $s(t−\tau) \leftrightarrow e^{-j\omega\tau}$) |
+| `position_solver.py` | `A_code = −A_{paper} \cdot \frac{2\pi}{c}` (explicit negation to compensate) |
+
+> **Warning**: Do **not** change the sign in only one of these two files. The invariant is enforced by regression test `T-M4-004`.
+
+#### 3. Signal Processing and Phase Unwrapping
+- **Pilot Tone Extraction**: Complex IQ phase of specific pilot subcarriers
+- **Phase Unwrapping**: Resolves $2\pi$ ambiguity using inter-frame temporal tracking. A jump of $>\pi$ rad between frames is corrected to the nearest equivalent in $(-\pi, +\pi]$. Verified to handle jumps $> 2\pi$ (test `T-M4-007`)
+- **`rx_bandwidth`**: Configurable parameter on `LocalizationChannelInterface` (default 50 MHz)
+
+#### 4. Position Solver (Trust-Region Least Squares)
+Using distance differences (hyperbolic geometry), the engine minimises:
+
+$$
+\min_{\mathbf{p}} \sum_{(j,\text{ref})}\left(\|\mathbf{p} - \mathbf{p}_{j}\| - \|\mathbf{p} - \mathbf{p}_{\text{ref}}\| - \Delta d_{j,\text{ref}}\right)^2
+$$
+
+with soft-$\ell_1$ robust loss and box bounds $[0, W] \times [0, L] \times [0, H]$. Supports `2D_fixed_height` (solves $x, y$ with fixed $z$) and full `3D` modes.
+
+> **Ground-truth firewall (M4-LOC-014)**: `PositionSolver` accepts only a plain `dict` of distance differences. It has zero imports from `environment.state` and cannot access the true `receiver_position`. Enforced by static source inspection test `T-M4-008`.
+
+#### 5. Confidence and Quality Metrics
+- **3D Positioning Error & RMSE**: Instantaneous and running root-mean-square errors
+- **Confidence Score**: Based on solver residuals and geometric dilution of precision (GDOP)
 
 ---
 
@@ -240,6 +325,8 @@ npm run build
 ├── package-lock.json
 ├── package.json
 ├── README.md
+├── IMPLEMENTATION_STATUS.md          ← live audit requirement register
+├── MODULES_1_TO_4_REPAIR_REPORT.md   ← post-repair closure document
 ├── backend/
 │   ├── package.json
 │   ├── server.ts
@@ -249,37 +336,41 @@ npm run build
 │       ├── README.md
 │       ├── requirements.txt
 │       ├── configs/
-│       │   └── default.yaml
+│       │   ├── default.yaml
+│       │   └── paper_reference.yaml  ← Section IV simulation parameters (provenance-tagged)
 │       ├── environment/
 │       │   ├── config.py
 │       │   ├── coordinate_system.py
-│       │   ├── geometry.py
-│       │   ├── led.py
+│       │   ├── geometry.py           ← angles in radians; no dc_gains
+│       │   ├── led.py                ← stores beam_angle only; no lambertian_order
 │       │   ├── mobility.py
 │       │   ├── obstacle.py
-│       │   ├── receiver.py
+│       │   ├── receiver.py           ← geometry only; no physics methods
 │       │   ├── room.py
-│       │   ├── scene.py
-│       │   ├── simulator.py
-│       │   ├── state.py
+│       │   ├── scene.py              ← FOV checked in radians; no H(0) step
+│       │   ├── simulator.py          ← get_state() returns geometry only
+│       │   ├── state.py              ← incident_angles_rad, irradiance_angles_rad;
+│       │   │                            room_dims, led_orientations, led_beam_angles;
+│       │   │                            no dc_gains field
 │       │   ├── visualization.py
 │       │   └── __init__.py
 │       ├── physics/
 │       │   ├── attenuation.py
 │       │   ├── channel_estimator.py
-│       │   ├── concentrator.py
-│       │   ├── constants.py
-│       │   ├── lambertian.py
+│       │   ├── concentrator.py       ← g(ψ) = n²/sin²(FOV) — Snell's law
+│       │   ├── constants.py          ← SPEED_OF_LIGHT canonical source
+│       │   ├── lambertian.py         ← lambertian_order(beam_angle) derived here
 │       │   ├── multipath.py
 │       │   ├── noise.py
-│       │   ├── optical_channel.py
+│       │   ├── optical_channel.py    ← H(0) with correct radians input
 │       │   ├── optical_power.py
 │       │   ├── photodiode.py
-│       │   ├── physics_engine.py
+│       │   ├── physics_engine.py     ← consumes EnvironmentState primitives;
+│       │   │                            derives m; sources room_dims from env_state
 │       │   ├── propagation.py
 │       │   ├── raytracer.py
 │       │   ├── receiver_model.py
-│       │   ├── reflection.py
+│       │   ├── reflection.py         ← NLOS: audited PASS
 │       │   ├── signal.py
 │       │   ├── snr.py
 │       │   ├── transmitter.py
@@ -287,10 +378,10 @@ npm run build
 │       │   └── __init__.py
 │       ├── communication/
 │       │   ├── adc.py
-│       │   ├── ber.py
+│       │   ├── ber.py                ← strict=True raises on length mismatch
 │       │   ├── bit_generator.py
 │       │   ├── channel_equalizer.py
-│       │   ├── channel_interface.py
+│       │   ├── channel_interface.py  ← noise_seed=None (non-deterministic)
 │       │   ├── config.py
 │       │   ├── constellation.py
 │       │   ├── dco_ofdm.py
@@ -298,15 +389,15 @@ npm run build
 │       │   ├── evm.py
 │       │   ├── exceptions.py
 │       │   ├── frame.py
-│       │   ├── led_frequency_response.py
+│       │   ├── led_frequency_response.py  ← H(f)=1/(1+jf/fc): audited PASS
 │       │   ├── metrics.py
 │       │   ├── ofdm.py
 │       │   ├── packet.py
 │       │   ├── pre_equalizer.py
-│       │   ├── qam.py
+│       │   ├── qam.py                ← square QAM only: {4, 16, 64}
 │       │   ├── rate.py
 │       │   ├── receiver.py
-│       │   ├── snr.py
+│       │   ├── snr.py                ← Σ√P·H formula (M3-COM-002); eta_scaling param
 │       │   ├── state.py
 │       │   ├── subcarrier.py
 │       │   ├── subcarrier_grid.py
@@ -317,11 +408,11 @@ npm run build
 │       │   └── __init__.py
 │       ├── localization/
 │       │   ├── calibration.py
-│       │   ├── channel_interface.py
+│       │   ├── channel_interface.py  ← rx_bandwidth configurable; sign convention doc
 │       │   ├── config.py
-│       │   ├── engine.py
+│       │   ├── engine.py             ← room_bounds from env_state.room_dims
 │       │   ├── exceptions.py
-│       │   ├── filters.py
+│       │   ├── filters.py            ← Butterworth BPF: audited PASS
 │       │   ├── frequency_plan.py
 │       │   ├── metrics.py
 │       │   ├── phase_estimator.py
@@ -382,36 +473,36 @@ npm run build
   * `README.md`: Documentation specific to the VLCL AI engine logic and execution.
   * `requirements.txt`: Python dependencies (NumPy, SciPy, Loguru, Rich, Plotly).
   * `configs/default.yaml`: Default configuration presets for the environment, LEDs, and receiver attributes.
-  * `environment/`: Core simulation modules for the physics engine.
-    * `config.py`: Loads and parses `default.yaml` into structured configurations with decimal notations.
+  * `environment/`: Module 1: Environment Simulation Engine — geometry and spatial state only.
+    * `config.py`: Loads and parses `default.yaml` into structured configurations.
     * `coordinate_system.py`: Manages the 3D coordinate logic and mapping.
-    * `geometry.py`: Physics vector computations and Lambertian gain math.
-    * `led.py`: Defines the LED transmitter behavior, power output, and Lambertian emission logic.
-    * `mobility.py`: Handles mobility patterns and movement vectors for the receiver.
-    * `obstacle.py`: Ray-tracing mathematical obstacle intersection logic for blocking Line-Of-Sight (LOS).
-    * `receiver.py`: Noise computations, gain calculation, and Signal-to-Noise Ratio (SNR) evaluation.
-    * `room.py`: Defines the physical dimensions and reflection properties of the simulated room.
-    * `scene.py`: Manages the aggregate simulation scene, including walls, LEDs, obstacles, and receivers.
-    * `simulator.py`: Coordinates the stepping and execution of the simulation timeline sequence.
-    * `state.py`: Defines data structures to track the simulation state across time.
-    * `visualization.py`: 3D plotting and output generation for assets (e.g., Plotly HTML).
-    * `__init__.py`: Module initializer for the environment package.
+    * `geometry.py`: `GeometryEngine.calculate_angles()` returns **radians**; no optical physics.
+    * `led.py`: LED transmitter — stores `beam_angle` [degrees] only; **no** Lambertian order computation.
+    * `mobility.py`: Mobility patterns and movement vectors for the receiver.
+    * `obstacle.py`: Ray-tracing mathematical obstacle intersection logic for LOS blockage.
+    * `receiver.py`: Photodiode geometry (position, normal, FOV); **no** physics methods.
+    * `room.py`: Physical dimensions and reflection properties of the simulated room.
+    * `scene.py`: Aggregate simulation scene; FOV check in radians; no H(0) step.
+    * `simulator.py`: `get_state()` returns `EnvironmentState` (geometry only).
+    * `state.py`: `EnvironmentState` — `incident_angles_rad`, `irradiance_angles_rad`, `room_dims`, `led_orientations`, `led_beam_angles`; **no** `dc_gains`.
+    * `visualization.py`: 3D plotting and output generation.
+    * `__init__.py`: Module initializer.
   * `physics/`: Module 2: High-fidelity Physics Simulation Engine simulating optical/electromagnetic propagation.
     * `attenuation.py`: Calculates optical attenuation and propagation delays.
     * `channel_estimator.py`: Estimates overall channel quality and bandwidth constraints.
-    * `concentrator.py`: Optical concentrator and lens gain calculations.
-    * `constants.py`: Physical constants (Speed of light, Planck's constant, etc.).
-    * `lambertian.py`: Advanced Lambertian radiation pattern modeling.
+    * `concentrator.py`: Optical concentrator gain $g(\psi) = n^2 / \sin^2(\text{FOV})$ (Snell's law).
+    * `constants.py`: Physical constants — canonical `SPEED_OF_LIGHT` source (no literals elsewhere).
+    * `lambertian.py`: `lambertian_order(beam_angle)` derivation — owned exclusively by Module 2.
     * `multipath.py`: Multi-path propagation calculations and impulse responses.
     * `noise.py`: Thermal and shot noise evaluation based on temperature and ambient light.
-    * `optical_channel.py`: Assembles DC gain matrices for LOS and NLOS paths.
+    * `optical_channel.py`: `compute_los_dc_gain()` — H(0) formula with correct radian angles.
     * `optical_power.py`: Receiver optical power calculations.
     * `photodiode.py`: Photodiode responsivity and electrical current conversion logic.
-    * `physics_engine.py`: Central `PhysicsEngine` orchestrator wrapping all physics modules.
+    * `physics_engine.py`: Central `PhysicsEngine` orchestrator; sources `beam_angle`, `led_normal`, `room_dims` from `EnvironmentState`.
     * `propagation.py`: Base optical propagation utilities.
     * `raytracer.py`: Advanced ray-tracing engine to support multi-reflection bounces.
     * `receiver_model.py`: High-fidelity models combining photodiode arrays and optical filters.
-    * `reflection.py`: Reflection coefficient tracking.
+    * `reflection.py`: First-order NLOS Lambertian reflectance — audited PASS.
     * `signal.py`: Signal strength evaluation and electrical signal processing.
     * `snr.py`: Comprehensive Signal-to-Noise Ratio (SNR) and capacity calculations.
     * `transmitter.py`: Transmitter power array dynamics.
@@ -419,46 +510,46 @@ npm run build
     * `__init__.py`: Module initializer.
   * `communication/`: Module 3: End-to-end VLC Communication (DCO-OFDM) Engine.
     * `adc.py`: Analog-to-Digital converter quantization and clipping.
-    * `ber.py`: Bit Error Rate calculations (empirical vs theoretical).
+    * `ber.py`: BER calculations — empirical (with `strict=True` length enforcement) and analytical square M-QAM.
     * `bit_generator.py`: Generates pseudo-random payloads.
-    * `channel_equalizer.py`: Zero-Forcing (ZF) and Minimum Mean Square Error (MMSE) frequency domain equalizers.
-    * `channel_interface.py`: Bridges the digital signal and the analog physics propagation model.
+    * `channel_equalizer.py`: Zero-Forcing (ZF) and MMSE frequency-domain equalizers.
+    * `channel_interface.py`: Physical channel propagation; `noise_seed=None` by default (truly random noise).
     * `config.py`: Module configurations (FFT size, sample rate, bandwidth, CP ratio).
-    * `constellation.py`: QAM constellation generation and normalization.
-    * `dco_ofdm.py`: Handles DC biasing and signal clipping for unipolar LED driving.
-    * `engine.py`: Central `CommunicationEngine` orchestrator that chains all components.
-    * `evm.py`: Error Vector Magnitude (EVM) calculation logic.
-    * `exceptions.py`: Module-specific error definitions.
+    * `constellation.py`: Square QAM constellation generation and normalization ({4, 16, 64}).
+    * `dco_ofdm.py`: DC biasing and signal clipping for unipolar LED driving.
+    * `engine.py`: Central `CommunicationEngine` orchestrator.
+    * `evm.py`: Error Vector Magnitude (EVM) calculation.
+    * `exceptions.py`: Module-specific error definitions including `VLCLCommunicationError`.
     * `frame.py`: Dataclass representations of a single OFDM frame.
-    * `led_frequency_response.py`: First-order low-pass filter modeling of the LED frequency bandwidth limitations.
-    * `metrics.py`: Aggregates the high-level KPIs like sum rate, PAPR, clipping ratio, and EVM.
-    * `ofdm.py`: Core OFDM Modulator and Demodulator using FFT/IFFT and Cyclic Prefix.
+    * `led_frequency_response.py`: $H_{LED}(f) = 1/(1 + jf/f_c)$ — first-order LP; audited PASS.
+    * `metrics.py`: Aggregates KPIs: sum rate, PAPR, clipping ratio, EVM.
+    * `ofdm.py`: Core OFDM Modulator/Demodulator using FFT/IFFT and Cyclic Prefix.
     * `packet.py`: Higher-layer networking definitions.
-    * `pre_equalizer.py`: Transmitter pre-equalization to flatten the channel response beforehand.
-    * `qam.py`: High-level QAM Modem handling Gray coding mapping and demapping.
-    * `rate.py`: Calculates Shannon capacity bounds, effective throughput, and spectral efficiency.
-    * `receiver.py`: Wraps all receive-side DSP (ADC → Sync → OFDM Demod → Equalizer → QAM Demap).
-    * `snr.py`: Communication-specific electrical SNR logic.
-    * `state.py`: Defines the `CommunicationState` data structure returned every frame.
-    * `subcarrier.py`, `subcarrier_grid.py`, `subcarrier_group.py`: Manages the frequency spectrum allocation (Data vs Pilot vs Null).
-    * `synchronization.py`: Simulates symbol timing synchronization.
-    * `transmitter.py`: Wraps all transmit-side DSP (QAM Map → OFDM Mod → DCO Bias).
+    * `pre_equalizer.py`: Transmitter pre-equalization to flatten the channel response.
+    * `qam.py`: QAM Modem with Gray coding; supports M ∈ {4, 16, 64} only.
+    * `rate.py`: Shannon capacity bounds, effective throughput, and spectral efficiency.
+    * `receiver.py`: Receive-side DSP (ADC → Sync → OFDM Demod → Equalizer → QAM Demap).
+    * `snr.py`: **Communication SNR** — $\gamma = \eta^2 \mu^2 (\sum \sqrt{P}\cdot H)^2 / \sigma^2$ (Paper Eq. 1).
+    * `state.py`: `CommunicationState` data structure returned every frame.
+    * `subcarrier.py`, `subcarrier_grid.py`, `subcarrier_group.py`: Frequency spectrum allocation.
+    * `synchronization.py`: Symbol timing synchronization.
+    * `transmitter.py`: Transmit-side DSP (QAM Map → OFDM Mod → DCO Bias).
     * `visualization.py`: Constellation diagrams and spectrum plotters.
     * `__init__.py`: Module initializer.
   * `localization/`: Module 4: A-DPDOA Indoor Localization Engine.
     * `calibration.py`: Pre-computes initial phase offsets and calibration data.
-    * `channel_interface.py`: Bridges the physical multi-path channel with localization pilot tones.
+    * `channel_interface.py`: Bridges physical multi-path channel with localization pilot tones; `rx_bandwidth` configurable; sign convention documented.
     * `config.py`: Module configurations (solver parameters, frequencies).
-    * `engine.py`: Central `LocalizationEngine` orchestrator chaining phase estimation and position solving.
+    * `engine.py`: Central `LocalizationEngine`; sources `room_bounds` from `env_state.room_dims`.
     * `exceptions.py`: Module-specific error definitions for localization failures.
-    * `filters.py`: Signal filtering for precise phase extraction.
-    * `frequency_plan.py`: Assigns distinct pilot frequencies to different LEDs.
+    * `filters.py`: Butterworth BPF/LPF with zero-phase `sosfiltfilt` — audited PASS.
+    * `frequency_plan.py`: Assigns distinct pilot frequencies $(f_1 \dots f_5)$ to LEDs.
     * `metrics.py`: Aggregates positioning errors, RMSE, and confidence scores.
-    * `phase_estimator.py`: Extracts and unwraps phase data from IQ signals.
-    * `position_solver.py`: Non-linear Least Squares (Gauss-Newton) optimization for hyperbolic positioning.
-    * `signal_generator.py`: Generates the transmitted pilot tones.
-    * `state.py`: Defines the `LocalizationState` data structure returned every frame.
-    * `validation.py`: Verifies geometry and line-of-sight requirements for solving.
+    * `phase_estimator.py`: IQ extraction, `PhaseUnwrapper` (handles jumps $> 2\pi$).
+    * `position_solver.py`: Trust-Region Least Squares; $\mathbf{A}_{code} = -\mathbf{A}_{paper}\cdot(2\pi/c)$; zero `EnvironmentState` imports (ground-truth firewall).
+    * `signal_generator.py`: Generates transmitted pilot tones.
+    * `state.py`: `LocalizationState` data structure returned every frame.
+    * `validation.py`: Verifies geometry and LOS requirements for solving.
     * `visualization.py`: 2D/3D plots of hyperbolic intersections and position estimates.
     * `__init__.py`: Module initializer.
   * `examples/`: Example simulation scripts.
@@ -466,9 +557,22 @@ npm run build
     * `__init__.py`: Module initializer.
   * `logs/`: Directory for output logs and generated artifacts.
     * `simulation_3d.html`: Pre-generated interactive 3D plot of the simulation environment.
-  * `tests/`: Unit tests for the simulation engine.
-    * `test_localization_engine.py`: Unit tests specifically for the A-DPDOA localization mechanics.
-    * `test_simulation.py`: Test suite validating simulation mechanics, ray-tracing, and mathematical calculations.
+  * `tests/`: Unit tests — **83 tests, 0 regressions**.
+    * `test_ber.py`: BER empirical and analytical tests.
+    * `test_communication_chain.py`: End-to-end loopback test.
+    * `test_dco_ofdm.py`: DCO-OFDM biasing and PAPR tests.
+    * `test_equalization.py`: ZF and MMSE equalizer tests.
+    * `test_frequency_response.py`: LED low-pass cutoff test.
+    * `test_localization_engine.py`: A-DPDOA phase and solver tests.
+    * `test_module2_integration.py`: Module 2 receiver mobility integration.
+    * `test_ofdm.py`: OFDM Hermitian symmetry and loopback.
+    * `test_phase_b_c_audit.py`: **16 tests** — angular unit contract (T-M1-ANGLE), Module 1 ownership boundary, H(0) physics (T-M2-001), INT-001 integration.
+    * `test_phase_g_h_i_audit.py`: **34 tests** — SNR sqrt fix (T-M3-COM-002), BER strict mode, sign convention invariant (T-M4-004), phase unwrapper (T-M4-007), ground-truth firewall (T-M4-008).
+    * `test_physics.py`: Lambertian, LOS gain, noise, and SNR.
+    * `test_qam.py`: QAM constellation, normalization, loopback.
+    * `test_rate.py`: Rate calculator tests.
+    * `test_simulation.py`: Simulation geometry, visibility, mobility.
+    * `test_subcarriers.py`: Subcarrier grid initialisation.
     * `__init__.py`: Module initializer.
 
 #### Frontend (`/frontend`)

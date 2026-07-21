@@ -1,4 +1,11 @@
 # reflection.py
+# Phase D Audit Result: PASS
+# Verified:
+#   - NLOS Lambertian model uses correct formula: h_wall = [(m+1)/(2πd²)] · cosᵐ(φ) · cos(α)
+#   - Wall-to-receiver term: h_rx = (1/(πd²)) · cos(β) · cos(ψ) is correct (m=1 Lambertian)
+#   - FOV gate applied correctly (psi > fov_rad -> skip)
+#   - room_dims now passed in from EnvironmentState (INT-001 fix applied in physics_engine.py)
+#   - FIX_REQUIRED: None in this file
 import numpy as np
 from typing import List, Dict, Any, Tuple
 from VLCL_AI.physics.lambertian import radiation_pattern

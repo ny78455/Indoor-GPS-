@@ -13,29 +13,43 @@ class BERCalculator:
     """
 
     @staticmethod
-    def compute_empirical(tx_bits: np.ndarray, rx_bits: np.ndarray) -> Tuple[float, int]:
+    def compute_empirical(tx_bits: np.ndarray, rx_bits: np.ndarray,
+                          strict: bool = False) -> Tuple[float, int]:
         """
         Computes empirical BER by directly comparing transmitted and recovered bits.
-        
+
+        Args:
+            tx_bits: Transmitted bit sequence.
+            rx_bits: Received/decoded bit sequence.
+            strict: If True, raise VLCLCommunicationError on length mismatch.
+                    If False (default), silently trim to common length.
+                    Use strict=True in research/validation pipelines to detect
+                    framing or alignment errors early. (M3-COM-004)
+
         Returns:
             ber (float): Bit error rate.
             bit_errors (int): Number of bit errors.
         """
         tx = np.asarray(tx_bits, dtype=np.uint8)
         rx = np.asarray(rx_bits, dtype=np.uint8)
-        
+
         if len(tx) != len(rx):
-            # Trim to common length
+            if strict:
+                raise VLCLCommunicationError(
+                    f"M3-COM-004: BER length mismatch: tx={len(tx)} bits, rx={len(rx)} bits. "
+                    f"Use strict=False to allow silent truncation (not recommended for validation)."
+                )
+            # Non-strict: trim to common length
             min_len = min(len(tx), len(rx))
             tx = tx[:min_len]
             rx = rx[:min_len]
-            
+
         if len(tx) == 0:
             return 0.0, 0
-            
+
         bit_errors = int(np.sum(tx != rx))
         ber = float(bit_errors / len(tx))
-        
+
         return ber, bit_errors
 
     @staticmethod

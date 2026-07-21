@@ -31,9 +31,15 @@
 | M4-LOC-008 | P2 | **DONE** | `localization/channel_interface.py`, `localization/position_solver.py` | T-M4-004, T-M4-006 (pending) | Sign convention undocumented; fragile | Explicit cross-file canonical comment block in both files; convention: `received_phase = −ωτ`, compensated by `A=−A·(2π/c)` in solver | Tests T-M4-004/T-M4-006 to be added in Phase H |
 | M4-LOC-006 | P2 | **DONE** | `localization/channel_interface.py` | T-M4-001 (pending Phase H) | `rx_bandwidth=50.0e6` hardcoded literal | `self.rx_bandwidth` param with default 50 MHz | None |
 | M3-COM-001 | P2 | OPEN (audit) | `communication/qam.py`, `ber.py` | Phase E gate | M-set contains 8, 32 (non-square) | TBD — Phase E audit must determine correct BER model before implementing | BLOCKED_AUDIT: must not add 8/32 without constellation-correct BER |
-| M3-COM-002 | P1 | OPEN | `communication/snr.py` | T-M3-001 | `Σ P·H` (missing sqrt) | `Σ √P·H` per Eq.(1) | Prerequisite: trace subcarrier_powers units (Phase G) |
-| M3-COM-003 | P2 | OPEN | `communication/snr.py` | T-M3-001 | `delta` param (collides with paper δ²) | Renamed per physical semantics | Name TBD pending trace (Phase G) |
-| M3-COM-004 | P3 | OPEN | `communication/ber.py` | T-M3-004 | Silent truncation on length mismatch | `strict=True` raises VLCLCommunicationError | None (Phase G) |
+| M3-COM-002 | P1 | **DONE** | `communication/snr.py` | T-M3-COM-002 ✅ (4 cases) | `Σ P·H` (missing sqrt) | `Σ √P·H` per Eq.(1); `np.sqrt(np.maximum(P,0))` | None |
+| M3-COM-003 | P2 | **DONE** | `communication/snr.py` | T-M3-COM-003 ✅ (2 cases) | `delta` param (semantic collision with paper δ²) | `eta_scaling` param; old `delta` kwarg raises `TypeError` | None |
+| M3-COM-004 | P3 | **DONE** | `communication/ber.py` | T-M3-COM-004 ✅ (4 cases) | Silent truncation on length mismatch | `strict=True` raises `VLCLCommunicationError` with lengths | `strict=False` default preserves backward compat |
+| M4-LOC-007 | P2 | **DONE** | `localization/phase_estimator.py` | T-M4-007 ✅ (5 cases) | No large-jump test | `PhaseUnwrapper.unwrap()` tested with ±7 rad jumps (>2π) | Algorithm verified correct |
+| M4-LOC-014 | P2 | **VERIFIED** | `localization/position_solver.py` | T-M4-008 ✅ (2 cases) | Ground-truth firewall status unknown | Source inspection + import scan: `EnvironmentState` absent | Static check via `inspect.getsource()` |
+| Phase D — reflection.py | AUDIT | **PASS** | `physics/reflection.py` | N/A | Unaudited | Verified: correct NLOS Lambertian, correct FOV gate, correct wall term | Annotation added to file |
+| Phase D — led_freq_response.py | AUDIT | **PASS** | `communication/led_frequency_response.py` | N/A | Unaudited | Verified: H(f)=1/(1+jf/fc) correct first-order LP | No changes needed |
+| Phase E — modulation M-set | AUDIT | **PASS** | `communication/ber.py` | T-M3-E-001/002 ✅ | Unaudited | Confirmed: M∈{2,4,16,64} only; 8/32-QAM blocked (non-square) | M3-COM-001 remains OPEN as documented |
+| Phase F — noise seed | FIX | **DONE** | `communication/channel_interface.py` | T-M3-F-001 ✅ (2 cases) | `rng = np.random.default_rng(42)` — deterministic noise per call | `rng = np.random.default_rng(seed=self.noise_seed)` default None | `noise_seed` param added for test reproducibility |
 
 ---
 
