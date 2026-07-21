@@ -8,9 +8,10 @@
  */
 
 import { Cpu, Wifi, ShieldAlert, Navigation, Clock, Signal, CheckCircle2, XCircle, EyeOff, Zap, Activity, AlertCircle, Loader } from "lucide-react";
-import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics } from "../types";
+import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics, IntegratedMetrics } from "../types";
 import CommunicationPanel from "./CommunicationPanel";
 import LocalizationPanel from "./LocalizationPanel";
+import IntegratedPanel from "./IntegratedPanel";
 
 interface DebugOverlayProps {
   state: SimulationState;
@@ -20,6 +21,8 @@ interface DebugOverlayProps {
   commLoading: boolean;
   localizationMetrics: LocalizationMetrics | null;
   localizationLoading: boolean;
+  integratedMetrics: IntegratedMetrics | null;
+  integratedLoading: boolean;
 }
 
 // ─── Stat Row ──────────────────────────────────────────────────────────────
@@ -317,7 +320,7 @@ function PhysicsPanel({ metrics, loading }: { metrics: PhysicsMetrics | null; lo
 }
 
 // ─── Main Export ───────────────────────────────────────────────────────────
-export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading }: DebugOverlayProps) {
+export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading, integratedMetrics, integratedLoading }: DebugOverlayProps) {
   const activeLeds = state.leds.filter(led => state.losMatrix[led.id] && state.visibilityMatrix[led.id]);
 
   return (
@@ -495,6 +498,9 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
 
         {/* ── Localization Engine Metrics (Python backend — Module 4) ── */}
         <LocalizationPanel metrics={localizationMetrics} loading={localizationLoading} />
+
+        {/* ── Integrated Engine Metrics (Python backend — Module 5) ── */}
+        <IntegratedPanel metrics={integratedMetrics} loading={integratedLoading} />
 
       </div>
     </div>

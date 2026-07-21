@@ -119,6 +119,8 @@ export default function App() {
     commLoading: false,
     localizationMetrics: null,
     localizationLoading: false,
+    integratedMetrics: null,
+    integratedLoading: false,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("visualizer");
@@ -525,6 +527,74 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
+  // ─── Integrated Engine Polling (every 60 frames → ~3s) ────────────────────
+  const integratedFrameRef = useRef(0);
+  const integratedInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    if (integratedInFlightRef.current) return;
+
+    const POLL_EVERY = 60;
+    integratedFrameRef.current = (integratedFrameRef.current + 1) % POLL_EVERY;
+    if (integratedFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      led_orientations: Object.fromEntries(state.leds.map((l) => [l.id, l.orientation])),
+      led_beam_angles: Object.fromEntries(state.leds.map((l) => [l.id, l.beamAngle])),
+      room_dims: [state.room.width, state.room.length, state.room.height],
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+    };
+
+    integratedInFlightRef.current = true;
+    setState((prev) => ({ ...prev, integratedLoading: true }));
+
+    fetch("/api/integrated", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        integratedInFlightRef.current = false;
+        if (data.success && data.integrated) {
+          setState((prev) => ({
+            ...prev,
+            integratedMetrics: data.integrated,
+            integratedLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, integratedLoading: false }));
+        }
+      })
+      .catch(() => {
+        integratedInFlightRef.current = false;
+        setState((prev) => ({ ...prev, integratedLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
   // ─── 4. Handlers ──────────────────────────────────────────────────────────
   const handleDownloadZip = () => window.open("/api/export-zip");
 
@@ -727,6 +797,8 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
                   commLoading={state.commLoading}
                   localizationMetrics={state.localizationMetrics}
                   localizationLoading={state.localizationLoading}
+                  integratedMetrics={state.integratedMetrics}
+                  integratedLoading={state.integratedLoading}
                 />
               </div>
 

@@ -158,6 +158,28 @@ export interface LocalizationMetrics {
   metadata: Record<string, unknown>;
 }
 
+// Integrated metrics returned by IntegratedVLCLEngine (Module 5)
+export interface IntegratedMetrics {
+  simulation_time: number;
+  communications: Record<string, {
+    num_transmitted_bits: number;
+    bit_errors: number;
+    empirical_ber: number;
+    num_recovered_symbols: number;
+  }>;
+  localization: {
+    estimated_position: [number, number, number];
+    error_3d_m: number;
+    success: boolean;
+  };
+  transmitter: {
+    papr_db: Record<string, number>;
+    clipping_ratio_pct: Record<string, number>;
+    dc_bias_volts: Record<string, number>;
+  };
+  metadata: Record<string, unknown>;
+}
+
 export interface SimulationState {
   currentTime: number;
   frameIndex: number;
@@ -191,5 +213,9 @@ export interface SimulationState {
   // Localization engine metrics (Python backend — Module 4)
   localizationMetrics: LocalizationMetrics | null;
   localizationLoading: boolean;
+
+  // Integrated engine metrics (Python backend — Module 5)
+  integratedMetrics: IntegratedMetrics | null;
+  integratedLoading: boolean;
 }
 
