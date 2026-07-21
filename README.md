@@ -57,7 +57,7 @@ The application separates UI representation, network capabilities, and raw physi
 
 ## 🔬 Simulation AI Core Architecture
 
-The Python AI core (`/backend/VLCL_AI`) is divided into four highly specialized modules. They work in tandem to create a true digital twin: a fast spatial awareness engine (Module 1), a rigorous electromagnetic calculation engine (Module 2), an end-to-end communication DSP engine (Module 3), and an advanced A-DPDOA localization engine (Module 4).
+The Python AI core (`/backend/VLCL_AI`) is divided into five highly specialized modules. They work in tandem to create a true digital twin: a fast spatial awareness engine (Module 1), a rigorous electromagnetic calculation engine (Module 2), an end-to-end communication DSP engine (Module 3), an advanced A-DPDOA localization engine (Module 4), and a unified Integrated Engine (Module 5).
 
 ---
 
@@ -263,6 +263,22 @@ with soft-$\ell_1$ robust loss and box bounds $[0, W] \times [0, L] \times [0, H
 
 ---
 
+### Module 5: Integrated Engine
+**Location**: `/backend/VLCL_AI/integrated_vlcl`
+
+Module 5 serves as the Master Coordinator. It integrates the communication and localization pipelines into a single step-by-step physical-layer execution.
+
+#### 1. Spectrum Partitioner & Multi-LED Power Mapper
+- Divides available OFDM subcarriers between communication groups and localization pilot tones.
+- Assigns specific localization pilot frequencies to specific LEDs and dynamically allocates remaining power for communication streams.
+
+#### 2. Composite Processing
+- Merges the separate signal generation branches from Module 3 and Module 4.
+- Runs the composite signals through clipping (DCO-OFDM DC Bias mapping) and the multi-path optical channel simultaneously.
+- At the receiver side, it isolates the respective signals in the frequency domain, passing them to the dedicated DSPs for demodulation (Communication) and phase unwrapping (Localization).
+
+---
+
 ## ⚡ Execution and Interface Commands
 
 The workspace provides workspace-wide scripts via `package.json` to handle installs and builds across both folders:
@@ -421,6 +437,14 @@ npm run build
 │       │   ├── state.py
 │       │   ├── validation.py
 │       │   ├── visualization.py
+│       │   └── __init__.py
+│       ├── integrated_vlcl/
+│       │   ├── engine.py             ← Integrated Master Coordinator
+│       │   ├── power_mapper.py       ← Distributes optical power between comms and loc
+│       │   ├── receiver.py
+│       │   ├── spectrum_partitioner.py
+│       │   ├── state.py
+│       │   ├── transmitter.py
 │       │   └── __init__.py
 │       ├── examples/
 │       │   ├── demo_environment.py
@@ -592,5 +616,6 @@ npm run build
     * `DebugOverlay.tsx`: Displays real-time logs and debug information in a retro-monospace console.
     * `FormulaPanel.tsx`: Educational component presenting mathematical equations related to VLCL.
     * `IllustrationPanel.tsx`: Renders visual diagrams and graphical explanations for VLCL concepts.
+    * `IntegratedPanel.tsx`: Telemetry dashboard for the Integrated Module 5 Engine (combined Comms & Loc metrics).
     * `LocalizationPanel.tsx`: Telemetry dashboard for the A-DPDOA localization engine (estimated position, RMSE).
     * `ThreeCanvas.tsx`: Contains the Three.js scene setup for the interactive 3D digital laboratory rendering.
