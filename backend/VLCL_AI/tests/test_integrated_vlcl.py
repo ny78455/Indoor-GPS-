@@ -26,9 +26,9 @@ class TestIntegratedVLCL(unittest.TestCase):
     def setUp(self):
         # 1. Standard room geometry setup
         self.room = Room(5.0, 5.0, 3.0)
-        self.receiver = Receiver([0.0, 0.0, 0.0], [0.0, 0.0, 1.0])
+        self.receiver = Receiver([0.0, 0.0, 0.85], [0.0, 0.0, 1.0])
         
-        # 4 LEDs symmetrically arranged (from configs/paper_reference.yaml)
+        # 4 LEDs symmetrically arranged around origin (0.0, 0.0) at height 1.35m (from paper_reference.yaml)
         self.leds = [
             LED(1, [-0.4,  0.4, 1.35], [0.0, 0.0, -1.0], power=10.0),
             LED(2, [ 0.4,  0.4, 1.35], [0.0, 0.0, -1.0], power=10.0),
@@ -44,8 +44,8 @@ class TestIntegratedVLCL(unittest.TestCase):
         # 2. Setup frequency details
         self.grid = SubcarrierGrid(
             fft_size=256,
-            total_bandwidth=20e6,
-            sample_rate=50e6
+            total_bandwidth=10e6,
+            sample_rate=25.6e6
         )
         self.plan = LocalizationFrequencyPlan(
             start_frequency_hz=4.0e6,
@@ -103,8 +103,9 @@ class TestIntegratedVLCL(unittest.TestCase):
 
     def test_end_to_end_integrated_vlcl(self):
         """Verifies end-to-end composite transmission, separation, and simultaneous VLC / A-DPDOA decoding."""
-        # Initialize the master integrated engine
-        engine = IntegratedVLCLEngine()
+        np.random.seed(42)
+        # Initialize the master integrated engine with grid matching 100 kHz subcarrier spacing
+        engine = IntegratedVLCLEngine(grid=self.grid, plan=self.plan)
         
         # Run physics step
         env_state = self.simulator.get_state()
@@ -120,6 +121,14 @@ class TestIntegratedVLCL(unittest.TestCase):
         
         # Run integrated step
         state = engine.step(env_state, physics_state, bits_dict=bits_dict)
+        
+        loc_res = state.localization_results
+        print("DEBUG p_true:", env_state.receiver_position)
+        print("DEBUG p_est:", loc_res["estimated_position"])
+        print("DEBUG 3d_error:", loc_res["error_3d_m"])
+        print("DEBUG raw_phases:", loc_res.get("raw_phases"))
+        print("DEBUG distance_diffs:", loc_res.get("distance_differences"))
+        print("DEBUG loc_phasors angles:", [np.angle(p) for p in loc_res.get("loc_phasors", [])])
         
         # Verify output types and shapes
         self.assertIsInstance(state, IntegratedVLCLState)

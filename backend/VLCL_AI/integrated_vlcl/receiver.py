@@ -30,7 +30,8 @@ class IntegratedVLCLReceiver:
         led_response: LEDFrequencyResponse,
         phase_estimator: PhaseEstimator,
         phase_unwrapper: PhaseUnwrapper,
-        position_solver: PositionSolver
+        position_solver: PositionSolver,
+        noise_seed: Optional[int] = None
     ):
         self.partitioner = partitioner
         self.power_mapper = power_mapper
@@ -42,6 +43,7 @@ class IntegratedVLCLReceiver:
         self.phase_estimator = phase_estimator
         self.phase_unwrapper = phase_unwrapper
         self.position_solver = position_solver
+        self.noise_seed = noise_seed
         
         self.fft_size = self.partitioner.grid.fft_size
 
@@ -63,22 +65,42 @@ class IntegratedVLCLReceiver:
         t = np.arange(n_samples) / sample_rate
         
         composite_rx_clean = np.zeros(n_samples, dtype=float)
-        frequencies = np.fft.fftfreq(n_samples, d=1.0 / sample_rate)
+        
+        N = self.fft_size
+        cp_len = self.demodulator.cp_length
+        frame_len = N + cp_len
+        num_frames = n_samples // frame_len
+        
+        freqs_N = np.fft.fftfreq(N, d=1.0 / sample_rate)
         
         # 1. Propagate each LED's signal through its frequency-selective channel
         for led_id, s_tx in unipolar_signals_dict.items():
             h_optical = physics_state.total_gains.get(led_id, 0.0)
-            h_led = self.led_response.complex_response(frequencies)
+            h_led = self.led_response.complex_response(freqs_N)
             
             # Apply continuous propagation delay in frequency domain
             delay = physics_state.propagation_times.get(led_id, 0.0)
-            phase_delay = np.exp(-1j * 2.0 * np.pi * frequencies * delay)
-            H = h_optical * h_led * phase_delay
+            phase_delay = np.exp(-1j * 2.0 * np.pi * freqs_N * delay)
+            H_N = h_optical * h_led * phase_delay
             
-            # FFT propagation
-            X = np.fft.fft(s_tx)
-            Y = X * H
-            rx_led = np.real(np.fft.ifft(Y))
+            rx_led = np.zeros_like(s_tx)
+            
+            for f_idx in range(max(1, num_frames)):
+                start = f_idx * frame_len
+                end = start + frame_len
+                frame_samples = s_tx[start:end]
+                if len(frame_samples) == frame_len:
+                    body = frame_samples[cp_len:]
+                    X_body = np.fft.fft(body)
+                    Y_body = X_body * H_N
+                    rx_body = np.real(np.fft.ifft(Y_body))
+                    rx_cp = rx_body[-cp_len:] if cp_len > 0 else np.array([], dtype=float)
+                    rx_led[start:end] = np.concatenate([rx_cp, rx_body])
+                else:
+                    X_part = np.fft.fft(frame_samples)
+                    freqs_p = np.fft.fftfreq(len(frame_samples), d=1.0 / sample_rate)
+                    H_p = h_optical * self.led_response.complex_response(freqs_p) * np.exp(-1j * 2.0 * np.pi * freqs_p * delay)
+                    rx_led[start:end] = np.real(np.fft.ifft(X_part * H_p))
             
             composite_rx_clean += rx_led
             
@@ -86,7 +108,10 @@ class IntegratedVLCLReceiver:
         noise_var = np.mean(list(physics_state.noise_variances.values())) if physics_state.noise_variances else 1e-12
         std_noise = np.sqrt(noise_var)
         
-        rng = np.random.default_rng()
+        if self.noise_seed is not None:
+            rng = np.random.default_rng(self.noise_seed)
+        else:
+            rng = np.random.default_rng()
         noise = rng.normal(0, std_noise, size=n_samples)
         composite_rx_noisy = composite_rx_clean + noise
         
@@ -207,8 +232,37 @@ class IntegratedVLCLReceiver:
         - Distance difference solving.
         - Coordinate solving.
         """
-        # 1. Run multi-stage bandpass and Hilbert phase estimation on received composite
-        raw_phases, I_vals, Q_vals = self.phase_estimator.process_full_waveform(rx_waveform, t)
+        # 1. Run phase estimation
+        sample_rate = self.partitioner.grid.sample_rate
+        duration_s = len(rx_waveform) / sample_rate
+        
+        # Integrated VLCL uses OFDM frame structures: extract tone phasors directly via FFT
+        fft_size = self.partitioner.grid.fft_size
+        cp_len = self.demodulator.cp_length
+        frame_len = fft_size + cp_len
+        num_frames = len(rx_waveform) // frame_len
+        
+        if num_frames >= 1:
+            Y_avg = np.zeros(fft_size, dtype=complex)
+            for f_i in range(num_frames):
+                start = f_i * frame_len + cp_len
+                frame_body = rx_waveform[start:start + fft_size]
+                if len(frame_body) == fft_size:
+                    Y_avg += np.fft.fft(frame_body)
+            Y_full = Y_avg / max(1, num_frames)
+        else:
+            rx_no_cp = rx_waveform[:fft_size]
+            if len(rx_no_cp) < fft_size:
+                rx_no_cp = np.pad(rx_no_cp, (0, fft_size - len(rx_no_cp)))
+            Y_full = np.fft.fft(rx_no_cp)
+        
+        subcarrier_spacing = sample_rate / fft_size
+        loc_phasors = []
+        for freq in self.partitioner.plan.frequencies:
+            bin_idx = int(round(freq / subcarrier_spacing))
+            loc_phasors.append(Y_full[bin_idx])
+            
+        raw_phases, I_vals, Q_vals = self.phase_estimator.process_phase_equivalent(np.array(loc_phasors))
         
         # 2. Phase unwrapping
         unwrapped_phases = self.phase_unwrapper.unwrap(raw_phases, prev_phases)
@@ -221,18 +275,20 @@ class IntegratedVLCLReceiver:
         distance_diffs = dd_solver.solve(unwrapped_phases)
         
         # 4. Coordinate solving via non-linear PositionSolver
-        # Extract active ceiling LED positions
-        led_positions = {led_id: np.array(pos) for led_id, pos in enumerate([
-            [-0.4, 0.4, 1.35], [0.4, 0.4, 1.35], [-0.4, -0.4, 1.35], [0.4, -0.4, 1.35]
-        ], 1)} # Fallback symmetric layout if not provided
-        
-        pos_solver = PositionSolver(
-            led_positions=led_positions,
-            room_bounds=room_bounds,
-            dimensions="3D",
-            fixed_height_m=0.85,
-            solver_method="trust_region"
-        )
+        if self.position_solver is not None:
+            pos_solver = self.position_solver
+        else:
+            # Extract active ceiling LED positions fallback
+            led_positions = {led_id: np.array(pos) for led_id, pos in enumerate([
+                [-0.4, 0.4, 1.35], [0.4, 0.4, 1.35], [-0.4, -0.4, 1.35], [0.4, -0.4, 1.35]
+            ], 1)}
+            pos_solver = PositionSolver(
+                led_positions=led_positions,
+                room_bounds=room_bounds,
+                dimensions="3D",
+                fixed_height_m=0.85,
+                solver_method="trust_region"
+            )
         
         p_guess = None
         p_est, solver_meta = pos_solver.solve(
@@ -253,5 +309,6 @@ class IntegratedVLCLReceiver:
             "unwrapped_phases": unwrapped_phases,
             "distance_differences": distance_diffs,
             "error_3d_m": err_3d,
-            "success": solver_meta["success"]
+            "success": solver_meta["success"],
+            "loc_phasors": loc_phasors
         }

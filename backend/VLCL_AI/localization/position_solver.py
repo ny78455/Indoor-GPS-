@@ -167,30 +167,46 @@ class PositionSolver:
         Supports grid search, room-center, centroid of LEDs, and warm-starting.
         """
         # Determine bounds
-        W, L, H = self.room_bounds
+        if len(self.room_bounds) == 6:
+            min_x, max_x, min_y, max_y, min_z, max_z = self.room_bounds
+        else:
+            W, L, H = self.room_bounds
+            has_neg = any(pos[0] < 0 or pos[1] < 0 for pos in self.led_positions.values()) if self.led_positions else False
+            if has_neg:
+                min_x, max_x = -W / 2.0, W / 2.0
+                min_y, max_y = -L / 2.0, L / 2.0
+                min_z, max_z = 0.0, H
+            else:
+                min_x, max_x = 0.0, W
+                min_y, max_y = 0.0, L
+                min_z, max_z = 0.0, H
+
+        center_x = (min_x + max_x) / 2.0
+        center_y = (min_y + max_y) / 2.0
+        center_z = (min_z + max_z) / 2.0
         
         # Step 1: Establish initial guess
         x0 = None
         if initial_guess is not None:
             x0 = np.copy(initial_guess)
             # Clip initial guess inside room bounds to be safe
-            x0[0] = np.clip(x0[0], 0.0, W)
-            x0[1] = np.clip(x0[1], 0.0, L)
+            x0[0] = np.clip(x0[0], min_x, max_x)
+            x0[1] = np.clip(x0[1], min_y, max_y)
             if self.dimensions == "3D":
-                x0[2] = np.clip(x0[2], 0.0, H)
+                x0[2] = np.clip(x0[2], min_z, max_z)
         
         if x0 is None or strategy == "room_center" or np.any(np.isnan(x0)):
             if self.dimensions == "2D_fixed_height":
-                x0 = np.array([W / 2.0, L / 2.0])
+                x0 = np.array([center_x, center_y])
             else:
-                x0 = np.array([W / 2.0, L / 2.0, H / 2.0])
+                x0 = np.array([center_x, center_y, center_z])
                 
         if strategy == "grid_search":
             # Coarse grid search to bypass local minima
             best_cost = float('inf')
             best_p = None
-            grid_x = np.linspace(0.1, W - 0.1, 5)
-            grid_y = np.linspace(0.1, L - 0.1, 5)
+            grid_x = np.linspace(min_x + 0.1, max_x - 0.1, 5)
+            grid_y = np.linspace(min_y + 0.1, max_y - 0.1, 5)
             
             if self.dimensions == "2D_fixed_height":
                 for gx in grid_x:
@@ -202,7 +218,7 @@ class PositionSolver:
                             best_cost = cost
                             best_p = p_test
             else:
-                grid_z = np.linspace(0.1, H - 0.1, 4)
+                grid_z = np.linspace(min_z + 0.1, max_z - 0.1, 4)
                 for gx in grid_x:
                     for gy in grid_y:
                         for gz in grid_z:
@@ -224,10 +240,10 @@ class PositionSolver:
 
         # Step 2: Establish boundaries for Levenberg-Marquardt vs Trust Region
         if self.dimensions == "2D_fixed_height":
-            bounds = ([0.0, 0.0], [W, L])
+            bounds = ([min_x, min_y], [max_x, max_y])
             x0 = x0[:2]
         else:
-            bounds = ([0.0, 0.0, 0.0], [W, L, H])
+            bounds = ([min_x, min_y, min_z], [max_x, max_y, max_z])
             x0 = x0[:3]
             
         # Step 3: Run optimization

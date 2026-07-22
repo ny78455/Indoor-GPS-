@@ -23,7 +23,8 @@ class IntegratedVLCLTransmitter:
         modem: QAMModem,
         modulator: OFDMModulator,
         dco_engine: DCOOFDM,
-        bit_generator: BitGenerator
+        bit_generator: BitGenerator,
+        led_cutoff_hz: float = 20.0e6
     ):
         self.partitioner = partitioner
         self.power_mapper = power_mapper
@@ -31,6 +32,7 @@ class IntegratedVLCLTransmitter:
         self.modulator = modulator
         self.dco_engine = dco_engine
         self.bit_generator = bit_generator
+        self.led_cutoff_hz = led_cutoff_hz
         
         self.fft_size = self.partitioner.grid.fft_size
         self.cp_length = self.modulator.cp_length
@@ -109,7 +111,18 @@ class IntegratedVLCLTransmitter:
         Synthesizes the analog-like localization tones mapped to LED i in the time domain.
         """
         sample_rate = self.partitioner.grid.sample_rate
-        t = np.arange(num_samples) / sample_rate
+        frame_len = self.fft_size + self.cp_length
+        num_frames = num_samples // frame_len
+        rem_samples = num_samples % frame_len
+        
+        t_frame_single = (np.arange(frame_len) - self.cp_length) / sample_rate
+        if num_frames > 0:
+            t_frames = np.tile(t_frame_single, num_frames)
+            if rem_samples > 0:
+                t_frames = np.concatenate([t_frames, t_frame_single[:rem_samples]])
+            t = t_frames
+        else:
+            t = (np.arange(num_samples) - self.cp_length) / sample_rate
         
         x_loc = np.zeros(num_samples, dtype=float)
         
@@ -127,9 +140,15 @@ class IntegratedVLCLTransmitter:
                 # Align frequency to the nearest subcarrier to maintain strict orthogonality
                 freq_aligned = bin_idx * subcarrier_spacing
                 
+                # LED transfer function phase pre-equalization
+                f_3db = getattr(self, "led_cutoff_hz", 20.0e6)
+                if hasattr(self.power_mapper, "led_cutoff_hz") and self.power_mapper.led_cutoff_hz:
+                    f_3db = self.power_mapper.led_cutoff_hz
+                phase_comp = np.arctan(freq_aligned / f_3db)
+                
                 # Superpose sinusoid with correct 2/N scaling to match the IFFT power of communication subcarriers
                 omega = 2.0 * np.pi * freq_aligned
-                x_loc += (2.0 * np.sqrt(power) / self.fft_size) * np.sin(omega * t + initial_phase)
+                x_loc += (2.0 * np.sqrt(power) / self.fft_size) * np.cos(omega * t + initial_phase + phase_comp)
                 
         return x_loc
 
@@ -167,11 +186,12 @@ class IntegratedVLCLTransmitter:
             # 2. Synthesize localization tones
             x_loc = self.generate_localization_led(led_id, num_samples, initial_phase)
             
-            # 3. Superpose components
-            x_comp = x_comm + x_loc
+            # 3. Superpose components:
+            # Clip communication waveform cleanly to prevent non-linear intermodulation onto localization subcarriers
+            clipped_comm, metrics = self.dco_engine.process_transmitter_waveform(x_comm)
             
-            # 4. DC Bias and Clipping (DCO Engine)
-            clipped_signal, metrics = self.dco_engine.process_transmitter_waveform(x_comp)
+            # Combine clipped communication signal with localization tones at driver summing node
+            clipped_signal = clipped_comm + x_loc
             
             # Save outputs
             unipolar_signals[led_id] = clipped_signal

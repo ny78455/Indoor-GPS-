@@ -18,12 +18,14 @@ class MultiLedPowerMapper:
         default_comm_power: float = 1.0,
         default_loc_power: float = 0.1,
         tone_to_led_map: Optional[Dict[int, List[int]]] = None,
-        comm_group_to_led_map: Optional[Dict[int, int]] = None
+        comm_group_to_led_map: Optional[Dict[int, int]] = None,
+        led_cutoff_hz: float = 20.0e6
     ):
         self.partitioner = partitioner
         self.num_leds = num_leds
         self.default_comm_power = default_comm_power
         self.default_loc_power = default_loc_power
+        self.led_cutoff_hz = led_cutoff_hz
         
         # Default tone to LED map from A-DPDOA:
         # Tone 1 -> LED 1

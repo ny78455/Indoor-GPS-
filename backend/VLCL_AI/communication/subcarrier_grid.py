@@ -30,6 +30,11 @@ class SubcarrierGrid:
         self.subcarriers: Dict[int, Subcarrier] = {}
         self._build_grid()
 
+    @property
+    def subcarrier_spacing(self) -> float:
+        """Returns the subcarrier spacing in Hz (sample_rate / fft_size)."""
+        return self.sample_rate / self.fft_size
+
     def _build_grid(self):
         """Initializes the OFDM subcarriers and their assigned purposes."""
         # Subcarrier bandwidth spacing

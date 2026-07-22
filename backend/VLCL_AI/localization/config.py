@@ -62,7 +62,7 @@ class LocalizationConfig:
         # Solver
         sol = loc_data.get("solver", {})
         self.solver_method = sol.get("method", "trust_region") # "trust_region", "levenberg-marquardt"
-        self.solver_dimensions = sol.get("dimensions", "3D") # "3D" or "2D_fixed_height"
+        self.solver_dimensions = sol.get("dimensions", "2D_fixed_height") # "2D_fixed_height" or "3D"
         self.solver_initialization = sol.get("initialization", "previous_or_room_center")
         self.solver_robust_loss = sol.get("robust_loss", "soft_l1")
         self.solver_max_iterations = sol.get("max_iterations", 200)

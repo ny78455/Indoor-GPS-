@@ -26,6 +26,8 @@ from VLCL_AI.integrated_vlcl.transmitter import IntegratedVLCLTransmitter
 from VLCL_AI.integrated_vlcl.receiver import IntegratedVLCLReceiver
 from VLCL_AI.integrated_vlcl.state import IntegratedVLCLState
 from VLCL_AI.adaptive.engine import AdaptiveTransmissionEngine
+from VLCL_AI.adaptive.power_engine import PowerPreEqualizationEngine
+from VLCL_AI.adaptive.power_decision import PowerDecision
 from VLCL_AI.adaptive.decision import AllocationDecision
 from VLCL_AI.communication.snr import compute_communication_snr
 
@@ -35,8 +37,15 @@ class IntegratedVLCLEngine:
     Integrates communication and localization pipelines into a single step-by-step physical-layer execution.
     """
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        grid: Optional[SubcarrierGrid] = None,
+        plan: Optional[LocalizationFrequencyPlan] = None
+    ):
         self.config_path = config_path
+        self.custom_grid = grid
+        self.custom_plan = plan
         
         # 1. Load Configurations
         self.comm_config = CommunicationConfig(config_path)
@@ -56,30 +65,37 @@ class IntegratedVLCLEngine:
         """Instantiates all required sub-components and builds integrated transmitter/receiver chains."""
         cfg_comm = self.comm_config.config
         
-        # Module 6 Adaptive Engine
+        # Module 6 & 7 Adaptive Engines
         self.adaptive_engine = AdaptiveTransmissionEngine()
+        self.power_engine = PowerPreEqualizationEngine()
         
         # Communication base modules
         self.bit_generator = BitGenerator(seed=cfg_comm["simulation"]["random_seed"])
         self.modem = QAMModem()
         
         # Base grid (FFT size, bandwidth, sample rate)
-        self.grid = SubcarrierGrid(
-            fft_size=cfg_comm["fft_size"],
-            total_bandwidth=cfg_comm["bandwidth_hz"],
-            sample_rate=cfg_comm["sample_rate_hz"],
-            guard_low=cfg_comm["subcarriers"]["guard_low"],
-            guard_high=cfg_comm["subcarriers"]["guard_high"],
-            pilot_spacing=cfg_comm["subcarriers"]["pilot_spacing"],
-            reserve_localization=True # Always reserve for integrated engine
-        )
+        if self.custom_grid is not None:
+            self.grid = self.custom_grid
+        else:
+            self.grid = SubcarrierGrid(
+                fft_size=cfg_comm["fft_size"],
+                total_bandwidth=cfg_comm["bandwidth_hz"],
+                sample_rate=cfg_comm["sample_rate_hz"],
+                guard_low=cfg_comm["subcarriers"]["guard_low"],
+                guard_high=cfg_comm["subcarriers"]["guard_high"],
+                pilot_spacing=cfg_comm["subcarriers"]["pilot_spacing"],
+                reserve_localization=True # Always reserve for integrated engine
+            )
         
         # Localization frequency plan
-        self.plan = LocalizationFrequencyPlan(
-            start_frequency_hz=self.loc_config.fp_start_freq,
-            spacing_hz=self.loc_config.fp_spacing,
-            count=self.loc_config.fp_count
-        )
+        if self.custom_plan is not None:
+            self.plan = self.custom_plan
+        else:
+            self.plan = LocalizationFrequencyPlan(
+                start_frequency_hz=self.loc_config.fp_start_freq,
+                spacing_hz=self.loc_config.fp_spacing,
+                count=self.loc_config.fp_count
+            )
         
         # 2. Spectrum Partitioner & Power Mapper (Module 5 Core)
         self.partitioner = SpectrumPartitioner(
@@ -89,12 +105,18 @@ class IntegratedVLCLEngine:
             guard_width=1
         )
         
+        self.led_response = LEDFrequencyResponse(
+            model_type=cfg_comm["led_frequency_response"]["model"],
+            cutoff_frequency_hz=cfg_comm["led_frequency_response"]["cutoff_frequency_hz"]
+        )
+
         self.power_mapper = MultiLedPowerMapper(
             partitioner=self.partitioner,
             num_leds=4,
             default_comm_power=1.0,
             default_loc_power=self.loc_config.default_tone_power,
-            tone_to_led_map=self.loc_config.tone_to_led_map
+            tone_to_led_map=self.loc_config.tone_to_led_map,
+            led_cutoff_hz=cfg_comm["led_frequency_response"]["cutoff_frequency_hz"]
         )
         
         # Modulators / Demodulators
@@ -112,12 +134,8 @@ class IntegratedVLCLEngine:
             max_drive_current=cfg_comm["clipping"]["max_value"] or 2.0,
             enabled=cfg_comm["clipping"]["enabled"]
         )
-        self.led_response = LEDFrequencyResponse(
-            model_type=cfg_comm["led_frequency_response"]["model"],
-            cutoff_frequency_hz=cfg_comm["led_frequency_response"]["cutoff_frequency_hz"]
-        )
         self.adc = ADCModel(
-            sample_rate_hz=cfg_comm["sample_rate_hz"],
+            sample_rate_hz=self.grid.sample_rate,
             bit_depth=cfg_comm["adc"]["bits"],
             full_scale_voltage=cfg_comm["adc"]["full_scale_voltage"],
             mode=cfg_comm["adc"]["mode"]
@@ -146,7 +164,8 @@ class IntegratedVLCLEngine:
             modem=self.modem,
             modulator=self.modulator,
             dco_engine=self.dco_engine,
-            bit_generator=self.bit_generator
+            bit_generator=self.bit_generator,
+            led_cutoff_hz=cfg_comm["led_frequency_response"]["cutoff_frequency_hz"]
         )
         
         # Position solver fallback (updated dynamically in receiver with real LED positions)
@@ -171,7 +190,8 @@ class IntegratedVLCLEngine:
             led_response=self.led_response,
             phase_estimator=self.phase_estimator,
             phase_unwrapper=self.phase_unwrapper,
-            position_solver=self.position_solver
+            position_solver=self.position_solver,
+            noise_seed=cfg_comm["simulation"]["random_seed"]
         )
 
     def reset(self):
@@ -225,6 +245,15 @@ class IntegratedVLCLEngine:
                 grid=self.grid
             )
 
+        power_decision = None
+        if allocation_decision is not None:
+            power_decision = self.power_engine.process_power_and_preeq(
+                allocation_decision=allocation_decision,
+                physics_state=physics_state,
+                grid=self.grid,
+                frequency_plan=self.plan
+            )
+
         # Determine modulation orders and bits
         orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}
         
@@ -262,6 +291,7 @@ class IntegratedVLCLEngine:
         self.receiver.position_solver.led_positions = {
             int(led_id): np.array(pos) for led_id, pos in env_state.led_positions.items()
         }
+        self.receiver.position_solver.fixed_height = float(env_state.receiver_position[2])
         self.receiver.position_solver.room_bounds = room_bounds
         
         loc_results = self.receiver.process_localization_branch(
@@ -291,7 +321,8 @@ class IntegratedVLCLEngine:
             dc_bias_per_led=dc_bias_per_led,
             metadata={
                 "num_samples": len(rx_waveform),
-                "sample_rate_hz": self.grid.sample_rate
+                "sample_rate_hz": self.grid.sample_rate,
+                "power_decision": power_decision
             }
         )
         

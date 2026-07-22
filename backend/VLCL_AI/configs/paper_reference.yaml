@@ -144,6 +144,21 @@ noise:
   ambient_temperature_k: 298.15  # [NOT_IN_PAPER] 25°C standard
 
 # -------------------------------------------------------------------
+# MODULE 7: POWER ALLOCATION & PRE-EQUALIZATION
+# -------------------------------------------------------------------
+power_allocation:
+  mode: equal_power               # [PAPER-Sec.III] equal_power or water_filling
+  total_power_budget_w: 4.0        # [SIMULATION_ASSUMPTION] 1W per LED * 4 LEDs
+  per_led_max_power_w: 1.0        # [SIMULATION_ASSUMPTION] 1W per LED
+  localization_reserve_w: 0.1     # [PAPER-Sec.II-A] reserved power per LED for positioning tones
+
+pre_equalization:
+  mode: regularized               # [PAPER-Sec.III] Eq.(18) pre-equalization mode
+  regularization_lambda: 1.0e-4   # [SIMULATION_ASSUMPTION] numerical stability parameter
+  max_gain_db: 10.0               # [SIMULATION_ASSUMPTION] gain capping ceiling in dB
+  enabled: true                   # [PAPER-Sec.III] Eq.(18) pre-equalizer active
+
+# -------------------------------------------------------------------
 # VALIDATED EQUATIONS (for traceability)
 # -------------------------------------------------------------------
 # Paper Eq.(1): gamma_{k,n}^co = mu^2 * (sum_i sqrt(P_{n,i}) * H_{i,n,k})^2 / delta^2
