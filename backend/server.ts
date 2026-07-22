@@ -4,6 +4,28 @@ import fs from "fs";
 import { exec } from "child_process";
 import { createServer as createViteServer } from "vite";
 
+type TelemetryValue = string | number | boolean | null;
+type TelemetryRow = Record<string, TelemetryValue>;
+type TelemetrySheet = "overview" | "environment" | "optical_channel" | "communication" | "localization" | "subcarriers" | "power" | "optimization" | "validation" | "events" | "run_metadata";
+type ResultRun = { runId: string; latestFrame: number; lastSimulationTime: number; createdAt: string; sheets: Map<TelemetrySheet, TelemetryRow[]>; metadata: TelemetryRow; listeners: Set<any> };
+const RESULT_SHEETS: TelemetrySheet[] = ["overview", "environment", "optical_channel", "communication", "localization", "subcarriers", "power", "optimization", "validation", "events", "run_metadata"];
+const resultRuns = new Map<string, ResultRun>();
+
+function makeRun(runId: string): ResultRun {
+  const createdAt = new Date().toISOString();
+  return { runId, latestFrame: -1, lastSimulationTime: -1, createdAt, sheets: new Map(RESULT_SHEETS.map((name) => [name, []])), metadata: { run_id: runId, telemetry_schema_version: "1.0.0", start_timestamp: createdAt }, listeners: new Set() };
+}
+
+function safeTelemetryValue(value: unknown): TelemetryValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function sanitizeRows(value: unknown): TelemetryRow[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row)).map((row) => Object.fromEntries(Object.entries(row).map(([key, item]) => [key, safeTelemetryValue(item)])));
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -13,6 +35,78 @@ async function startServer() {
     : path.join(__dirname, "..");
 
   app.use(express.json());
+
+  // Live Results telemetry store. It is an observer: rows arrive from existing
+  // module states and are committed atomically without invoking any simulator code.
+  app.get("/api/results/runs", (_req, res) => {
+    res.json([...resultRuns.values()].map((run) => ({ run_id: run.runId, latest_frame: run.latestFrame, created_at: run.createdAt, rows: Object.fromEntries([...run.sheets].map(([name, rows]) => [name, rows.length])) })));
+  });
+
+  app.post("/api/results/:runId/frame", (req, res) => {
+    const runId = String(req.params.runId);
+    const frame = req.body;
+    if (!frame || !Number.isInteger(frame.frame_id) || frame.frame_id < 0 || typeof frame.simulation_time_s !== "number" || !Number.isFinite(frame.simulation_time_s) || !frame.sheets || typeof frame.sheets !== "object") {
+      return res.status(400).json({ error: "Invalid telemetry frame envelope." });
+    }
+    const run = resultRuns.get(runId) ?? makeRun(runId);
+    if (!resultRuns.has(runId)) resultRuns.set(runId, run);
+    if (frame.frame_id <= run.latestFrame) return res.status(409).json({ error: "Frame ID must be unique and strictly increasing." });
+    if (frame.simulation_time_s < run.lastSimulationTime) return res.status(400).json({ error: "Simulation time must be monotonic." });
+    const prepared = new Map<TelemetrySheet, TelemetryRow[]>();
+    for (const sheet of RESULT_SHEETS) {
+      if (sheet === "run_metadata") continue;
+      const rows = sanitizeRows(frame.sheets[sheet]);
+      if (rows.some((row) => row.run_id !== runId || row.frame_id !== frame.frame_id)) return res.status(400).json({ error: `Rows in ${sheet} must share the envelope run_id and frame_id.` });
+      prepared.set(sheet, rows);
+    }
+    // Commit every prepared sheet only after validation succeeds: no partial frames.
+    for (const [sheet, rows] of prepared) run.sheets.get(sheet)!.push(...rows);
+    run.latestFrame = frame.frame_id;
+    run.lastSimulationTime = frame.simulation_time_s;
+    run.metadata = { ...run.metadata, last_committed_frame: frame.frame_id, last_simulation_time_s: frame.simulation_time_s, last_wall_clock_timestamp: typeof frame.wall_clock_timestamp === "string" ? frame.wall_clock_timestamp : null };
+    const event = `event: frame\ndata: ${JSON.stringify({ run_id: runId, frame_id: frame.frame_id, simulation_time_s: frame.simulation_time_s, row_counts: Object.fromEntries([...prepared].map(([name, rows]) => [name, rows.length])) })}\n\n`;
+    for (const listener of run.listeners) listener.write(event);
+    res.status(201).json({ committed: true, run_id: runId, frame_id: frame.frame_id });
+  });
+
+  app.get("/api/results/:runId/summary", (req, res) => {
+    const run = resultRuns.get(req.params.runId);
+    if (!run) return res.status(404).json({ error: "Run not found." });
+    res.json({ run_id: run.runId, latest_frame: run.latestFrame, row_counts: Object.fromEntries([...run.sheets].map(([name, rows]) => [name, rows.length])), metadata: run.metadata });
+  });
+
+  app.get("/api/results/:runId/sheet/:sheet", (req, res) => {
+    const run = resultRuns.get(req.params.runId), sheet = req.params.sheet as TelemetrySheet;
+    if (!run) return res.status(404).json({ error: "Run not found." });
+    if (!RESULT_SHEETS.includes(sheet)) return res.status(404).json({ error: "Unknown worksheet." });
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 200), 1), 5000), offset = Math.max(Number(req.query.offset ?? 0), 0);
+    const filter = String(req.query.search ?? "").toLowerCase();
+    const rows = run.sheets.get(sheet)!.filter((row) => !filter || Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(filter)));
+    res.json({ run_id: run.runId, sheet, total: rows.length, offset, limit, rows: rows.slice(offset, offset + limit) });
+  });
+
+  app.get("/api/results/:runId/frame/:frameId", (req, res) => {
+    const run = resultRuns.get(req.params.runId), frameId = Number(req.params.frameId);
+    if (!run) return res.status(404).json({ error: "Run not found." });
+    res.json({ run_id: run.runId, frame_id: frameId, sheets: Object.fromEntries(RESULT_SHEETS.map((sheet) => [sheet, run.sheets.get(sheet)!.filter((row) => row.frame_id === frameId)])) });
+  });
+
+  app.get("/api/results/:runId/export", (req, res) => {
+    const run = resultRuns.get(req.params.runId);
+    if (!run) return res.status(404).json({ error: "Run not found." });
+    // A JSON copy is an immutable export snapshot at the last committed frame.
+    const snapshot = { run_id: run.runId, frame_id: run.latestFrame, metadata: { ...run.metadata, export_timestamp: new Date().toISOString() }, rows: Object.fromEntries(RESULT_SHEETS.map((sheet) => [sheet, [...run.sheets.get(sheet)!]])) };
+    res.json(snapshot);
+  });
+
+  app.get("/api/results/:runId/stream", (req, res) => {
+    const run = resultRuns.get(req.params.runId) ?? makeRun(req.params.runId);
+    if (!resultRuns.has(req.params.runId)) resultRuns.set(req.params.runId, run);
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    res.write(`event: ready\ndata: ${JSON.stringify({ run_id: run.runId, latest_frame: run.latestFrame })}\n\n`);
+    run.listeners.add(res);
+    req.on("close", () => run.listeners.delete(res));
+  });
 
   // API Route: Get configuration
   app.get("/api/config", (req, res) => {

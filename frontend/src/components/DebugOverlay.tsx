@@ -8,7 +8,7 @@
  */
 
 import { Cpu, Wifi, ShieldAlert, Navigation, Clock, Signal, CheckCircle2, XCircle, EyeOff, Zap, Activity, AlertCircle, Loader } from "lucide-react";
-import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics, IntegratedMetrics, AdaptiveMetrics, PowerMetrics } from "../types";
+import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics, IntegratedMetrics, AdaptiveMetrics, PowerMetrics, JointMetrics } from "../types";
 import CommunicationPanel from "./CommunicationPanel";
 import LocalizationPanel from "./LocalizationPanel";
 import IntegratedPanel from "./IntegratedPanel";
@@ -529,5 +529,4 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
     </div>
   );
 }
-
 

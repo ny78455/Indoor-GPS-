@@ -200,7 +200,6 @@ export interface PowerMetrics {
   feasible_sum_rate_bps: number;
   warnings: string[];
 }
-}
 
 export interface ConstraintStatus {
   localization_satisfied: boolean;

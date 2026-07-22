@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Terminal, Layers, RefreshCw, FileText, Download, Activity, BookOpen, Lightbulb, MapPin } from "lucide-react";
+import { Terminal, Layers, RefreshCw, FileText, Download, Activity, BookOpen, Lightbulb, MapPin, Table2 } from "lucide-react";
 
 import { SimulationState, RoomParams, LEDParams, ReceiverParams, ObstacleParams, MobilityParams } from "./types";
 import ThreeCanvas from "./components/ThreeCanvas";
@@ -8,6 +8,8 @@ import DebugOverlay from "./components/DebugOverlay";
 import FormulaPanel from "./components/FormulaPanel";
 import CodeViewer from "./components/CodeViewer";
 import IllustrationPanel from "./components/IllustrationPanel";
+import LiveResults from "./components/results/LiveResults";
+import { useLiveResults } from "./components/results/useLiveResults";
 
 // ─── 1. Initial State Definitions ─────────────────────────────────────────
 const INITIAL_ROOM: RoomParams = {
@@ -54,10 +56,11 @@ const INITIAL_MOBILITY: MobilityParams = {
 };
 
 // ─── Tab Config ────────────────────────────────────────────────────────────
-type TabKey = "visualizer" | "guide" | "formulas" | "code" | "terminal";
+type TabKey = "visualizer" | "results" | "guide" | "formulas" | "code" | "terminal";
 
 const TABS: { key: TabKey; icon: React.ReactNode; label: string; desc: string }[] = [
   { key: "visualizer", icon: <Layers className="w-3.5 h-3.5" />, label: "3D Simulator", desc: "Live 3D digital twin" },
+  { key: "results", icon: <Table2 className="w-3.5 h-3.5" />, label: "Live Results", desc: "Real-time scientific workbook" },
   { key: "guide", icon: <Lightbulb className="w-3.5 h-3.5" />, label: "System Guide", desc: "How it works — for beginners" },
   { key: "formulas", icon: <BookOpen className="w-3.5 h-3.5" />, label: "Physics Math", desc: "Formulas & diagrams" },
   { key: "code", icon: <FileText className="w-3.5 h-3.5" />, label: "Codebase", desc: "View source code" },
@@ -133,6 +136,7 @@ export default function App() {
   const [pythonTerminalLogs, setPythonTerminalLogs] = useState<string>("");
   const [pythonLoading, setPythonLoading] = useState(false);
   const [pythonSuccess, setPythonSuccess] = useState<boolean | null>(null);
+  const liveResults = useLiveResults(state);
 
   const timeElapsedRef = useRef(0.0);
   const waypointIndexRef = useRef(0);
@@ -1106,6 +1110,8 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
         )}
 
         {/* ── System Guide Tab ── */}
+        {activeTab === "results" && <LiveResults state={state} telemetry={liveResults} />}
+
         {activeTab === "guide" && (
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <IllustrationPanel />
