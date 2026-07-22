@@ -206,6 +206,7 @@ class IntegratedVLCLEngine:
         bits_dict: Optional[Dict[int, np.ndarray]] = None,
         modulation_order_dict: Optional[Dict[int, int]] = None,
         allocation_decision: Optional[AllocationDecision] = None,
+        localization_reserve_w: float = 0.1,
         adaptive_mode: bool = False
     ) -> IntegratedVLCLState:
         """
@@ -251,8 +252,10 @@ class IntegratedVLCLEngine:
                 allocation_decision=allocation_decision,
                 physics_state=physics_state,
                 grid=self.grid,
-                frequency_plan=self.plan
+                frequency_plan=self.plan,
+                localization_reserve_w=localization_reserve_w
             )
+            self.power_mapper.power_matrix = power_decision.power_allocation.per_subcarrier_power_matrix
 
         # Determine modulation orders and bits
         orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}

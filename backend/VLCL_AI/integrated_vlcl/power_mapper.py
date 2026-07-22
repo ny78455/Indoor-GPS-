@@ -19,7 +19,7 @@ class MultiLedPowerMapper:
         default_loc_power: float = 0.1,
         tone_to_led_map: Optional[Dict[int, List[int]]] = None,
         comm_group_to_led_map: Optional[Dict[int, int]] = None,
-        led_cutoff_hz: float = 20.0e6
+        led_cutoff_hz: float = 10.0e6
     ):
         self.partitioner = partitioner
         self.num_leds = num_leds

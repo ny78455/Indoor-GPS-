@@ -71,17 +71,24 @@ class IntegratedVLCLTransmitter:
         # Group into OFDM frames
         num_frames = int(np.ceil(len(qam_symbols) / num_pos))
         padded_len = num_frames * num_pos
-        padded_symbols = np.zeros(padded_len, dtype=complex)
-        padded_symbols[:len(qam_symbols)] = qam_symbols
+        if len(qam_symbols) < padded_len:
+            extra_bits_needed = (padded_len - len(qam_symbols)) * k
+            extra_bits = self.bit_generator.generate(extra_bits_needed)
+            extra_symbols = self.modem.modulate(extra_bits, modulation_order)
+            qam_symbols = np.concatenate([qam_symbols, extra_symbols[:padded_len - len(qam_symbols)]])
         
-        frames_qam = padded_symbols.reshape(num_frames, num_pos)
+        frames_qam = qam_symbols.reshape(num_frames, num_pos)
         
         # Build frequency grid
         freq_grid = np.zeros((num_frames, self.fft_size), dtype=complex)
         
+        # Retrieve allocated communication powers for these subcarriers
+        p_comm = self.power_mapper.power_matrix[led_id - 1, independent_pos]
+        scaled_symbols = frames_qam * np.sqrt(np.maximum(0.0, p_comm))
+        
         # Place symbols on positive carriers and apply Hermitian symmetry
         for f_idx in range(num_frames):
-            freq_grid[f_idx, independent_pos] = frames_qam[f_idx]
+            freq_grid[f_idx, independent_pos] = scaled_symbols[f_idx]
             for k_bin in range(1, half_n):
                 freq_grid[f_idx, self.fft_size - k_bin] = np.conj(freq_grid[f_idx, k_bin])
                 
@@ -108,48 +115,45 @@ class IntegratedVLCLTransmitter:
         initial_phase: float = 0.0
     ) -> np.ndarray:
         """
-        Synthesizes the analog-like localization tones mapped to LED i in the time domain.
+        Synthesizes the analog-like localization tones mapped to LED i in the time domain using standard OFDM frames.
         """
         sample_rate = self.partitioner.grid.sample_rate
-        frame_len = self.fft_size + self.cp_length
+        fft_size = self.fft_size
+        cp_len = self.cp_length
+        frame_len = fft_size + cp_len
         num_frames = num_samples // frame_len
         rem_samples = num_samples % frame_len
         
-        t_frame_single = (np.arange(frame_len) - self.cp_length) / sample_rate
-        if num_frames > 0:
-            t_frames = np.tile(t_frame_single, num_frames)
-            if rem_samples > 0:
-                t_frames = np.concatenate([t_frames, t_frame_single[:rem_samples]])
-            t = t_frames
-        else:
-            t = (np.arange(num_samples) - self.cp_length) / sample_rate
+        # Build single OFDM frame for localization
+        x_loc_frame = np.zeros(frame_len, dtype=float)
+        n = np.arange(-cp_len, fft_size)
         
-        x_loc = np.zeros(num_samples, dtype=float)
-        
-        # Find which tones are mapped to this LED
+        f_3db = getattr(self, "led_cutoff_hz", 10.0e6)
+        if hasattr(self.power_mapper, "led_cutoff_hz") and self.power_mapper.led_cutoff_hz:
+            f_3db = self.power_mapper.led_cutoff_hz
+
+        subcarrier_spacing = sample_rate / fft_size
+
         for tone_idx, freq in enumerate(self.partitioner.plan.frequencies):
             tone_id = tone_idx + 1
             mapped_leds = self.power_mapper.tone_to_led_map.get(tone_id, [])
             
             if led_id in mapped_leds:
-                # Retrieve configured power for this tone on this LED
-                subcarrier_spacing = self.partitioner.grid.sample_rate / self.fft_size
                 bin_idx = int(round(freq / subcarrier_spacing))
                 power = self.power_mapper.power_matrix[led_id - 1, bin_idx]
+                phase_comp = np.arctan(freq / f_3db)
                 
-                # Align frequency to the nearest subcarrier to maintain strict orthogonality
-                freq_aligned = bin_idx * subcarrier_spacing
-                
-                # LED transfer function phase pre-equalization
-                f_3db = getattr(self, "led_cutoff_hz", 20.0e6)
-                if hasattr(self.power_mapper, "led_cutoff_hz") and self.power_mapper.led_cutoff_hz:
-                    f_3db = self.power_mapper.led_cutoff_hz
-                phase_comp = np.arctan(freq_aligned / f_3db)
-                
-                # Superpose sinusoid with correct 2/N scaling to match the IFFT power of communication subcarriers
-                omega = 2.0 * np.pi * freq_aligned
-                x_loc += (2.0 * np.sqrt(power) / self.fft_size) * np.cos(omega * t + initial_phase + phase_comp)
-                
+                x_loc_frame += (2.0 * np.sqrt(power) / fft_size) * np.cos(
+                    2.0 * np.pi * bin_idx * n / fft_size + initial_phase + phase_comp
+                )
+
+        if num_frames > 0:
+            x_loc = np.tile(x_loc_frame, num_frames)
+            if rem_samples > 0:
+                x_loc = np.concatenate([x_loc, x_loc_frame[:rem_samples]])
+        else:
+            x_loc = x_loc_frame[:num_samples]
+
         return x_loc
 
     def transmit(

@@ -12,6 +12,12 @@ from VLCL_AI.adaptive.metrics import AdaptiveMetrics
 from VLCL_AI.adaptive.validation import AllocationValidator
 from VLCL_AI.adaptive.engine import AdaptiveTransmissionEngine
 
+from VLCL_AI.adaptive.joint_state import JointDecisionState, ConstraintStatus
+from VLCL_AI.adaptive.constraint_evaluator import ConstraintEvaluator
+from VLCL_AI.adaptive.loc_power_controller import LocalizationPowerController
+from VLCL_AI.adaptive.joint_optimizer import JointAdaptiveOptimizer
+from VLCL_AI.adaptive.baselines import BaselineComparators
+
 __all__ = [
     "AdaptiveConfig",
     "ChannelFeedback",
@@ -26,5 +32,11 @@ __all__ = [
     "AllocationDecision",
     "AdaptiveMetrics",
     "AllocationValidator",
-    "AdaptiveTransmissionEngine"
+    "AdaptiveTransmissionEngine",
+    "JointDecisionState",
+    "ConstraintStatus",
+    "ConstraintEvaluator",
+    "LocalizationPowerController",
+    "JointAdaptiveOptimizer",
+    "BaselineComparators"
 ]
