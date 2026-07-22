@@ -1,0 +1,59 @@
+# Canonical source of truth for Module 9 reproduction.
+# A null/UNKNOWN field is intentionally not replaced by an engineering default.
+paper:
+  value: "Yang et al., An Advanced Integrated Visible Light Communication and Localization System"
+  provenance: PAPER_EXPLICIT
+  reference: "IEEE Transactions on Communications, vol. 71, no. 12, Dec. 2023"
+reproduction_mode: PAPER_EXACT
+room:
+  width_m: {value: null, units: m, provenance: UNKNOWN, reference: "Paper does not state room width"}
+  length_m: {value: null, units: m, provenance: UNKNOWN, reference: "Paper does not state room length"}
+  height_m: {value: null, units: m, provenance: UNKNOWN, reference: "Paper does not state room height"}
+  reflections: {value: null, provenance: UNKNOWN, reference: "No complete reflection model reported"}
+  los_only: {value: true, provenance: PAPER_EXPLICIT, reference: "Section II system model"}
+leds:
+  - id: {value: 1, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+    position_m: {value: [-0.4, 0.4, 1.35], units: m, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED, note: "Ceiling-down orientation inferred from topology"}
+    optical_power_w: {value: null, units: W, provenance: UNKNOWN}
+    semi_angle_deg: {value: null, units: deg, provenance: UNKNOWN}
+  - id: {value: 2, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+    position_m: {value: null, units: m, provenance: PAPER_AMBIGUITY, note: "Paper coordinate list contains an apparent duplicate."}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: null, units: W, provenance: UNKNOWN}
+    semi_angle_deg: {value: null, units: deg, provenance: UNKNOWN}
+  - id: {value: 3, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+    position_m: {value: [-0.4, -0.4, 1.35], units: m, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: null, units: W, provenance: UNKNOWN}
+    semi_angle_deg: {value: null, units: deg, provenance: UNKNOWN}
+  - id: {value: 4, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+    position_m: {value: null, units: m, provenance: PAPER_AMBIGUITY, note: "Derived from symmetry only in inferred mode."}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: null, units: W, provenance: UNKNOWN}
+    semi_angle_deg: {value: null, units: deg, provenance: UNKNOWN}
+receiver:
+  height_m: {value: null, units: m, provenance: UNKNOWN}
+  area_m2: {value: null, units: m^2, provenance: UNKNOWN}
+  responsivity_a_per_w: {value: null, units: A/W, provenance: UNKNOWN}
+  fov_deg: {value: null, units: deg, provenance: UNKNOWN}
+  orientation: {value: null, provenance: UNKNOWN}
+communication:
+  bandwidth_hz: {value: 20000000.0, units: Hz, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+  fft_size: {value: 256, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+  ber_max: {value: 3.8e-3, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+  modulation_orders: {value: [2, 4, 8, 16, 32, 64], provenance: PAPER_EXPLICIT, reference: "Section IV"}
+  cyclic_prefix_ratio: {value: null, provenance: UNKNOWN}
+localization:
+  tone_count: {value: 5, provenance: PAPER_EXPLICIT, reference: "Section II-A"}
+  start_frequency_hz: {value: 4000000.0, units: Hz, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+  spacing_hz: {value: 200000.0, units: Hz, provenance: PAPER_EXPLICIT, reference: "Section IV"}
+  sample_rate_hz: {value: null, units: Hz, provenance: UNKNOWN}
+  tone_to_led_map:
+    value: {1: [1], 2: [2], 3: [3], 4: [4], 5: [1]}
+    provenance: PAPER_EXPLICIT
+    reference: "Section II-A: f1 and f5 share LED 1"
+power:
+  total_budget_w: {value: null, units: W, provenance: UNKNOWN}
+  per_led_max_w: {value: null, units: W, provenance: UNKNOWN}
+  localization_reserve_w: {value: null, units: W, provenance: UNKNOWN}

@@ -1,0 +1,53 @@
+# Inferred mode is intentionally separate from paper_exact.yaml.
+# Values are documented simulation inferences carried forward from paper_reference.yaml.
+paper: {value: "Yang et al., An Advanced Integrated Visible Light Communication and Localization System", provenance: PAPER_EXPLICIT}
+reproduction_mode: PAPER_INFERRED
+room:
+  width_m: {value: 5.0, units: m, provenance: PAPER_INFERRED, note: "Representative room, not stated by paper"}
+  length_m: {value: 5.0, units: m, provenance: PAPER_INFERRED}
+  height_m: {value: 3.0, units: m, provenance: PAPER_INFERRED}
+  reflections: {value: false, provenance: PAPER_INFERRED, note: "LOS-focused paper model"}
+  los_only: {value: true, provenance: PAPER_EXPLICIT}
+leds:
+  - id: {value: 1, provenance: PAPER_EXPLICIT}
+    position_m: {value: [-0.4, 0.4, 1.35], units: m, provenance: PAPER_EXPLICIT}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: 1.0, units: W, provenance: SIMULATION_ASSUMPTION}
+    semi_angle_deg: {value: 60.0, units: deg, provenance: SIMULATION_ASSUMPTION}
+  - id: {value: 2, provenance: PAPER_EXPLICIT}
+    position_m: {value: [0.4, 0.4, 1.35], units: m, provenance: PAPER_INFERRED, note: "Symmetry repair of ambiguous published coordinate"}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: 1.0, units: W, provenance: SIMULATION_ASSUMPTION}
+    semi_angle_deg: {value: 60.0, units: deg, provenance: SIMULATION_ASSUMPTION}
+  - id: {value: 3, provenance: PAPER_EXPLICIT}
+    position_m: {value: [-0.4, -0.4, 1.35], units: m, provenance: PAPER_EXPLICIT}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: 1.0, units: W, provenance: SIMULATION_ASSUMPTION}
+    semi_angle_deg: {value: 60.0, units: deg, provenance: SIMULATION_ASSUMPTION}
+  - id: {value: 4, provenance: PAPER_EXPLICIT}
+    position_m: {value: [0.4, -0.4, 1.35], units: m, provenance: PAPER_INFERRED}
+    orientation: {value: [0, 0, -1], provenance: PAPER_INFERRED}
+    optical_power_w: {value: 1.0, units: W, provenance: SIMULATION_ASSUMPTION}
+    semi_angle_deg: {value: 60.0, units: deg, provenance: SIMULATION_ASSUMPTION}
+receiver:
+  height_m: {value: 0.85, units: m, provenance: PAPER_INFERRED}
+  area_m2: {value: 0.0001, units: m^2, provenance: SIMULATION_ASSUMPTION}
+  responsivity_a_per_w: {value: 0.54, units: A/W, provenance: SIMULATION_ASSUMPTION}
+  fov_deg: {value: 70.0, units: deg, provenance: SIMULATION_ASSUMPTION}
+  orientation: {value: [0, 0, 1], provenance: PAPER_INFERRED}
+communication:
+  bandwidth_hz: {value: 20000000.0, units: Hz, provenance: PAPER_EXPLICIT}
+  fft_size: {value: 256, provenance: PAPER_EXPLICIT}
+  ber_max: {value: 0.0038, provenance: PAPER_EXPLICIT}
+  modulation_orders: {value: [2, 4, 8, 16, 32, 64], provenance: PAPER_EXPLICIT}
+  cyclic_prefix_ratio: {value: 0.25, provenance: SIMULATION_ASSUMPTION}
+localization:
+  tone_count: {value: 5, provenance: PAPER_EXPLICIT}
+  start_frequency_hz: {value: 4000000.0, units: Hz, provenance: PAPER_EXPLICIT}
+  spacing_hz: {value: 200000.0, units: Hz, provenance: PAPER_EXPLICIT}
+  sample_rate_hz: {value: 20000000.0, units: Hz, provenance: SIMULATION_ASSUMPTION}
+  tone_to_led_map: {value: {1: [1], 2: [2], 3: [3], 4: [4], 5: [1]}, provenance: PAPER_EXPLICIT}
+power:
+  total_budget_w: {value: 4.0, units: W, provenance: SIMULATION_ASSUMPTION}
+  per_led_max_w: {value: 1.0, units: W, provenance: SIMULATION_ASSUMPTION}
+  localization_reserve_w: {value: 0.1, units: W, provenance: PAPER_INFERRED}

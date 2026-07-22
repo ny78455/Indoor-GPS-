@@ -1,0 +1,9 @@
+# Paper-exact environment fragment. Unknowns remain deliberately null.
+coordinate_system: {value: "paper coordinates", provenance: PAPER_EXPLICIT, reference: "Section IV"}
+room:
+  width_m: {value: null, units: m, provenance: UNKNOWN}
+  length_m: {value: null, units: m, provenance: UNKNOWN}
+  height_m: {value: null, units: m, provenance: UNKNOWN}
+receiver_trajectory: {value: null, provenance: UNKNOWN}
+obstacles: {value: null, provenance: UNKNOWN}
+reflections: {value: null, provenance: UNKNOWN}
