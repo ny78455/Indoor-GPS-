@@ -509,6 +509,311 @@ except Exception as e:
     );
   });
 
+  // API Route: Adaptive Modulation & Dynamic Subcarrier Allocation (Module 6)
+  // Chains Physics → AdaptiveTransmissionEngine → returns AllocationDecision summary
+  app.post("/api/adaptive", (req, res) => {
+    const envState = req.body;
+
+    const isWin = process.platform === "win32";
+    const venvPythonPath = isWin
+      ? path.join(BASE_DIR, "VLCL_AI", ".venv", "Scripts", "python.exe")
+      : path.join(BASE_DIR, "VLCL_AI", ".venv", "bin", "python3");
+    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
+
+    const inlineScript = `
+import sys, os, json, numpy as np
+try:
+    sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
+    from VLCL_AI.environment.state import EnvironmentState
+    from VLCL_AI.physics.physics_engine import PhysicsEngine
+    from VLCL_AI.communication.subcarrier_grid import SubcarrierGrid
+    from VLCL_AI.adaptive.engine import AdaptiveTransmissionEngine
+    from VLCL_AI.adaptive.config import AdaptiveConfig
+    from VLCL_AI.adaptive.feedback import ChannelFeedback
+
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    env_state = EnvironmentState(
+        current_time=data.get("current_time", 0.0),
+        frame_index=data.get("frame_index", 0),
+        fps=data.get("fps", 60.0),
+        receiver_position=data["receiver_position"],
+        receiver_orientation=data["receiver_orientation"],
+        receiver_velocity=data.get("receiver_velocity", [0,0,0]),
+        receiver_acceleration=data.get("receiver_acceleration", [0,0,0]),
+        receiver_angles=data.get("receiver_angles", {"roll":0,"pitch":0,"yaw":0}),
+        room_dims=data.get("room_dims", [5.0, 5.0, 3.0]),
+        led_positions={int(k): v for k,v in data["led_positions"].items()},
+        led_powers={int(k): v for k,v in data["led_powers"].items()},
+        led_active={int(k): v for k,v in data["led_active"].items()},
+        led_orientations={int(k): v for k,v in data["led_orientations"].items()},
+        led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
+        distances={int(k): v for k,v in data["distances"].items()},
+        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
+        los_matrix={int(k): v for k,v in data["los_matrix"].items()},
+        blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
+        obstacles=data.get("obstacles", [])
+    )
+
+    # Step 1: Run Physics Engine to get channel gains and SNR
+    physics_engine = PhysicsEngine()
+    physics_state = physics_engine.compute(env_state)
+
+    # Step 2: Build AdaptiveConfig from request params
+    num_devices = int(data.get("num_devices", len(data["led_positions"])))
+    fft_size = int(data.get("fft_size", 256))
+    ber_max = float(data.get("ber_max", 3.8e-3))
+    mode = str(data.get("mode", "ADAPTIVE"))
+    min_rate_bps = float(data.get("min_rate_bps", 5e6))
+
+    config = AdaptiveConfig(
+        ber_max=ber_max,
+        mode=mode,
+        fft_size=fft_size,
+        total_bandwidth_hz=20.0e6,
+        cp_ratio=0.25,
+    )
+
+    # Step 3: Build SubcarrierGrid
+    grid = SubcarrierGrid(fft_size=fft_size, total_bandwidth=20.0e6)
+
+    # Step 4: Build synthetic per-device, per-subcarrier SNR matrix
+    # Use physics SNR (dB) → linear, broadcast across subcarriers with mild freq rolloff
+    device_ids = list(range(1, num_devices + 1))
+    snr_matrix = np.zeros((num_devices, fft_size), dtype=float)
+    freq_axis = np.array([n * (20.0e6 / fft_size) for n in range(fft_size)])
+
+    for k_idx, led_id in enumerate(device_ids):
+        snr_db = physics_state.snrs.get(led_id, 0.0)
+        snr_linear = 10.0 ** (snr_db / 10.0)
+        # Mild 1st-order frequency rolloff: H(f) = 1 / (1 + (f/f_c)^2)
+        f_cutoff = 20.0e6
+        rolloff = 1.0 / (1.0 + (freq_axis / f_cutoff) ** 2)
+        snr_matrix[k_idx, :] = snr_linear * rolloff
+        snr_matrix[k_idx, 0] = 0.0  # DC subcarrier unused
+
+    # Step 5: Build ChannelFeedback for each device
+    feedbacks = [
+        ChannelFeedback(
+            device_id=dev_id,
+            snr_per_subcarrier=snr_matrix[k_idx, :],
+            requested_min_rate_bps=min_rate_bps,
+        )
+        for k_idx, dev_id in enumerate(device_ids)
+    ]
+
+    # Step 6: Run Module 6
+    engine = AdaptiveTransmissionEngine(config=config)
+    decision = engine.allocate_resources(feedbacks=feedbacks, grid=grid)
+
+    result = decision.to_dict()
+    print(json.dumps(result))
+except Exception as e:
+    import traceback
+    print(json.dumps({"__error__": str(e), "__traceback__": traceback.format_exc()}))
+    sys.exit(1)
+`;
+
+    const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_adaptive_tmp.py");
+    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_adaptive_input.json");
+
+    try {
+      fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
+      fs.writeFileSync(tmpScript, inlineScript, "utf-8");
+      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+    } catch (e: any) {
+      return res.status(500).json({ error: "Failed to write temp files: " + e.message });
+    }
+
+    exec(
+      `${pythonCmd} "${tmpScript}" "${tmpInput}"`,
+      { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8", LOGURU_LEVEL: "WARNING" }, timeout: 35000 },
+      (error, stdout, stderr) => {
+        if (error && !stdout.trim()) {
+          return res.status(500).json({ error: stderr || error.message });
+        }
+        try {
+          const result = JSON.parse(stdout.trim());
+          if (result.__error__) {
+            return res.status(500).json({ error: result.__error__, traceback: result.__traceback__ });
+          }
+          res.json({ success: true, adaptive: result });
+        } catch {
+          res.status(500).json({ error: "Failed to parse adaptive output", raw: stdout.slice(0, 500) });
+        }
+      }
+    );
+  });
+
+
+  // API Route: Power Allocation & LED Pre-Equalization (Module 7)
+  // Chains Physics → Module 6 → PowerPreEqualizationEngine → returns PowerDecision summary
+  app.post("/api/power", (req, res) => {
+    const envState = req.body;
+
+    const isWin = process.platform === "win32";
+    const venvPythonPath = isWin
+      ? path.join(BASE_DIR, "VLCL_AI", ".venv", "Scripts", "python.exe")
+      : path.join(BASE_DIR, "VLCL_AI", ".venv", "bin", "python3");
+    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
+
+    const inlineScript = `
+import sys, os, json, numpy as np
+try:
+    sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
+    from VLCL_AI.environment.state import EnvironmentState
+    from VLCL_AI.physics.physics_engine import PhysicsEngine
+    from VLCL_AI.communication.subcarrier_grid import SubcarrierGrid
+    from VLCL_AI.adaptive.engine import AdaptiveTransmissionEngine
+    from VLCL_AI.adaptive.power_engine import PowerPreEqualizationEngine
+    from VLCL_AI.adaptive.config import AdaptiveConfig
+    from VLCL_AI.adaptive.feedback import ChannelFeedback
+
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    env_state = EnvironmentState(
+        current_time=data.get("current_time", 0.0),
+        frame_index=data.get("frame_index", 0),
+        fps=data.get("fps", 60.0),
+        receiver_position=data["receiver_position"],
+        receiver_orientation=data["receiver_orientation"],
+        receiver_velocity=data.get("receiver_velocity", [0,0,0]),
+        receiver_acceleration=data.get("receiver_acceleration", [0,0,0]),
+        receiver_angles=data.get("receiver_angles", {"roll":0,"pitch":0,"yaw":0}),
+        room_dims=data.get("room_dims", [5.0, 5.0, 3.0]),
+        led_positions={int(k): v for k,v in data["led_positions"].items()},
+        led_powers={int(k): v for k,v in data["led_powers"].items()},
+        led_active={int(k): v for k,v in data["led_active"].items()},
+        led_orientations={int(k): v for k,v in data["led_orientations"].items()},
+        led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
+        distances={int(k): v for k,v in data["distances"].items()},
+        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
+        los_matrix={int(k): v for k,v in data["los_matrix"].items()},
+        blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
+        obstacles=data.get("obstacles", [])
+    )
+
+    # Step 1: Physics Engine
+    physics_engine = PhysicsEngine()
+    physics_state = physics_engine.compute(env_state)
+
+    # Step 2: Build config and grid
+    num_devices = int(data.get("num_devices", len(data["led_positions"])))
+    fft_size = int(data.get("fft_size", 256))
+    ber_max = float(data.get("ber_max", 3.8e-3))
+    mode = str(data.get("mode", "ADAPTIVE"))
+    min_rate_bps = float(data.get("min_rate_bps", 5e6))
+
+    config = AdaptiveConfig(ber_max=ber_max, mode=mode, fft_size=fft_size, total_bandwidth_hz=20.0e6)
+    grid = SubcarrierGrid(fft_size=fft_size, total_bandwidth=20.0e6)
+
+    # Step 3: Build SNR matrix
+    device_ids = list(range(1, num_devices + 1))
+    snr_matrix = np.zeros((num_devices, fft_size), dtype=float)
+    freq_axis = np.array([n * (20.0e6 / fft_size) for n in range(fft_size)])
+
+    for k_idx, led_id in enumerate(device_ids):
+        snr_db = physics_state.snrs.get(led_id, 0.0)
+        snr_linear = 10.0 ** (snr_db / 10.0)
+        rolloff = 1.0 / (1.0 + (freq_axis / 20.0e6) ** 2)
+        snr_matrix[k_idx, :] = snr_linear * rolloff
+        snr_matrix[k_idx, 0] = 0.0
+
+    # Step 4: Run Module 6
+    feedbacks = [
+        ChannelFeedback(device_id=dev_id, snr_per_subcarrier=snr_matrix[k_idx, :], requested_min_rate_bps=min_rate_bps)
+        for k_idx, dev_id in enumerate(device_ids)
+    ]
+    adaptive_engine = AdaptiveTransmissionEngine(config=config)
+    decision = adaptive_engine.allocate_resources(feedbacks=feedbacks, grid=grid)
+
+    # Step 5: Run Module 7
+    power_engine = PowerPreEqualizationEngine(config=config)
+    total_power_budget_w = float(data.get("total_power_budget_w", 4.0))
+    power_mode = str(data.get("power_mode", "EQUAL_POWER"))
+    pre_eq_mode = str(data.get("pre_eq_mode", "REGULARIZED"))
+    loc_reserve_w = float(data.get("localization_reserve_w", 0.1))
+
+    power_decision = power_engine.process_power_and_preeq(
+        allocation_decision=decision,
+        physics_state=physics_state,
+        grid=grid,
+        total_power_budget_w=total_power_budget_w,
+        localization_reserve_w=loc_reserve_w,
+        power_mode=power_mode,
+        pre_eq_mode=pre_eq_mode,
+    )
+
+    pa = power_decision.power_allocation
+    pe = power_decision.pre_eq_state
+
+    result = {
+        "power_allocation": {
+            "mode": pa.mode,
+            "total_power_budget_w": float(pa.total_power_budget_w),
+            "per_led_max_power_w": {str(k): float(v) for k, v in pa.per_led_max_power_w.items()},
+            "localization_reserved_power_w": {str(k): float(v) for k, v in pa.localization_reserved_power_w.items()},
+            "communication_available_power_w": {str(k): float(v) for k, v in pa.communication_available_power_w.items()},
+            "per_device_power_w": {str(k): float(v) for k, v in pa.per_device_power_w.items()},
+        },
+        "pre_eq": {
+            "mode": pe.mode,
+            "max_gain_db": float(pe.max_gain_db),
+            "papr_before_db": {str(k): float(v) for k, v in pe.papr_before_db.items()},
+            "papr_after_db": {str(k): float(v) for k, v in pe.papr_after_db.items()},
+            "clipping_ratio": {str(k): float(v) for k, v in pe.clipping_ratio.items()},
+        },
+        "predicted_ber": {str(k): float(v) for k, v in power_decision.predicted_ber.items()},
+        "modulation_feasible": {str(k): bool(v) for k, v in power_decision.modulation_feasible.items()},
+        "nominal_sum_rate_bps": float(power_decision.nominal_sum_rate_bps),
+        "feasible_sum_rate_bps": float(power_decision.feasible_sum_rate_bps),
+        "warnings": list(power_decision.warnings),
+    }
+    print(json.dumps(result))
+except Exception as e:
+    import traceback
+    print(json.dumps({"__error__": str(e), "__traceback__": traceback.format_exc()}))
+    sys.exit(1)
+`;
+
+    const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_power_tmp.py");
+    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_power_input.json");
+
+    try {
+      fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
+      fs.writeFileSync(tmpScript, inlineScript, "utf-8");
+      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+    } catch (e: any) {
+      return res.status(500).json({ error: "Failed to write temp files: " + e.message });
+    }
+
+    exec(
+      `${pythonCmd} "${tmpScript}" "${tmpInput}"`,
+      { cwd: BASE_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8", LOGURU_LEVEL: "WARNING" }, timeout: 40000 },
+      (error, stdout, stderr) => {
+        if (error && !stdout.trim()) {
+          return res.status(500).json({ error: stderr || error.message });
+        }
+        try {
+          const result = JSON.parse(stdout.trim());
+          if (result.__error__) {
+            return res.status(500).json({ error: result.__error__, traceback: result.__traceback__ });
+          }
+          res.json({ success: true, power: result });
+        } catch {
+          res.status(500).json({ error: "Failed to parse power output", raw: stdout.slice(0, 500) });
+        }
+      }
+    );
+  });
+
+
   app.get("/api/visualization", (req, res) => {
     const htmlPath = path.join(BASE_DIR, "VLCL_AI", "logs", "simulation_3d.html");
     if (fs.existsSync(htmlPath)) {

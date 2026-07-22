@@ -158,6 +158,49 @@ export interface LocalizationMetrics {
   metadata: Record<string, unknown>;
 }
 
+// Adaptive Transmission metrics returned by AdaptiveTransmissionEngine (Module 6)
+export interface AdaptiveMetrics {
+  sum_rate_bps: number;
+  achievable_rates_bps: Record<string, number>;  // device_id -> rate (bps)
+  qos_status: string;                            // "FEASIBLE" | "PARTIALLY_FEASIBLE" | "INFEASIBLE_QOS"
+  qos_satisfied: Record<string, boolean>;        // device_id -> satisfied?
+  qos_deficits_bps: Record<string, number>;      // device_id -> deficit (bps)
+  unused_subcarriers_count: number;
+  diagnostics: {
+    sum_rate_bps: number;
+    spectral_efficiency_bps_hz: number;
+    jains_fairness_index: number;
+    subcarrier_utilization_ratio: number;
+    allocated_subcarrier_count: number;
+    total_comm_subcarrier_count: number;
+    average_bits_per_symbol: number;
+  };
+}
+
+// Power & Pre-Equalization metrics returned by PowerPreEqualizationEngine (Module 7)
+export interface PowerMetrics {
+  power_allocation: {
+    mode: string;                                       // "EQUAL_POWER" | "WATER_FILLING"
+    total_power_budget_w: number;
+    per_led_max_power_w: Record<string, number>;        // LED id -> max power (W)
+    localization_reserved_power_w: Record<string, number>;
+    communication_available_power_w: Record<string, number>;
+    per_device_power_w: Record<string, number>;
+  };
+  pre_eq: {
+    mode: string;                                       // "REGULARIZED" | "ZERO_FORCING" | "NONE"
+    max_gain_db: number;
+    papr_before_db: Record<string, number>;             // LED id -> PAPR before pre-eq (dB)
+    papr_after_db: Record<string, number>;              // LED id -> PAPR after pre-eq (dB)
+    clipping_ratio: Record<string, number>;
+  };
+  predicted_ber: Record<string, number>;               // device_id -> predicted BER
+  modulation_feasible: Record<string, boolean>;        // device_id -> BER <= BER_max?
+  nominal_sum_rate_bps: number;
+  feasible_sum_rate_bps: number;
+  warnings: string[];
+}
+
 // Integrated metrics returned by IntegratedVLCLEngine (Module 5)
 export interface IntegratedMetrics {
   simulation_time: number;
@@ -217,5 +260,13 @@ export interface SimulationState {
   // Integrated engine metrics (Python backend — Module 5)
   integratedMetrics: IntegratedMetrics | null;
   integratedLoading: boolean;
+
+  // Adaptive Transmission engine metrics (Python backend — Module 6)
+  adaptiveMetrics: AdaptiveMetrics | null;
+  adaptiveLoading: boolean;
+
+  // Power & Pre-Equalization engine metrics (Python backend — Module 7)
+  powerMetrics: PowerMetrics | null;
+  powerLoading: boolean;
 }
 

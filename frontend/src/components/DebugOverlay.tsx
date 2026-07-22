@@ -8,10 +8,12 @@
  */
 
 import { Cpu, Wifi, ShieldAlert, Navigation, Clock, Signal, CheckCircle2, XCircle, EyeOff, Zap, Activity, AlertCircle, Loader } from "lucide-react";
-import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics, IntegratedMetrics } from "../types";
+import { SimulationState, PhysicsMetrics, CommunicationMetrics, LocalizationMetrics, IntegratedMetrics, AdaptiveMetrics, PowerMetrics } from "../types";
 import CommunicationPanel from "./CommunicationPanel";
 import LocalizationPanel from "./LocalizationPanel";
 import IntegratedPanel from "./IntegratedPanel";
+import AdaptivePanel from "./AdaptivePanel";
+import PowerPanel from "./PowerPanel";
 
 interface DebugOverlayProps {
   state: SimulationState;
@@ -23,6 +25,10 @@ interface DebugOverlayProps {
   localizationLoading: boolean;
   integratedMetrics: IntegratedMetrics | null;
   integratedLoading: boolean;
+  adaptiveMetrics: AdaptiveMetrics | null;
+  adaptiveLoading: boolean;
+  powerMetrics: PowerMetrics | null;
+  powerLoading: boolean;
 }
 
 // ─── Stat Row ──────────────────────────────────────────────────────────────
@@ -320,7 +326,7 @@ function PhysicsPanel({ metrics, loading }: { metrics: PhysicsMetrics | null; lo
 }
 
 // ─── Main Export ───────────────────────────────────────────────────────────
-export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading, integratedMetrics, integratedLoading }: DebugOverlayProps) {
+export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading, integratedMetrics, integratedLoading, adaptiveMetrics, adaptiveLoading, powerMetrics, powerLoading }: DebugOverlayProps) {
   const activeLeds = state.leds.filter(led => state.losMatrix[led.id] && state.visibilityMatrix[led.id]);
 
   return (
@@ -501,6 +507,12 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
 
         {/* ── Integrated Engine Metrics (Python backend — Module 5) ── */}
         <IntegratedPanel metrics={integratedMetrics} loading={integratedLoading} />
+
+        {/* ── Adaptive Modulation Engine Metrics (Python backend — Module 6) ── */}
+        <AdaptivePanel metrics={adaptiveMetrics} loading={adaptiveLoading} />
+
+        {/* ── Power & Pre-Equalization Engine Metrics (Python backend — Module 7) ── */}
+        <PowerPanel metrics={powerMetrics} loading={powerLoading} />
 
       </div>
     </div>

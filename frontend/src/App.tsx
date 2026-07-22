@@ -121,6 +121,10 @@ export default function App() {
     localizationLoading: false,
     integratedMetrics: null,
     integratedLoading: false,
+    adaptiveMetrics: null,
+    adaptiveLoading: false,
+    powerMetrics: null,
+    powerLoading: false,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("visualizer");
@@ -595,6 +599,159 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
+  // ─── Adaptive Engine Polling (every 60 frames → ~3s) ─────────────────────────────
+  const adaptiveFrameRef = useRef(0);
+  const adaptiveInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    if (adaptiveInFlightRef.current) return;
+
+    const POLL_EVERY = 60;
+    adaptiveFrameRef.current = (adaptiveFrameRef.current + 1) % POLL_EVERY;
+    if (adaptiveFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      led_orientations: Object.fromEntries(state.leds.map((l) => [l.id, l.orientation])),
+      led_beam_angles: Object.fromEntries(state.leds.map((l) => [l.id, l.beamAngle])),
+      room_dims: [state.room.width, state.room.length, state.room.height],
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+      // Module 6 params
+      num_devices: state.leds.length,
+      min_rate_bps: 5e6,
+      ber_max: 3.8e-3,
+      mode: "ADAPTIVE",
+      fft_size: 256,
+    };
+
+    adaptiveInFlightRef.current = true;
+    setState((prev) => ({ ...prev, adaptiveLoading: true }));
+
+    fetch("/api/adaptive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        adaptiveInFlightRef.current = false;
+        if (data.success && data.adaptive) {
+          setState((prev) => ({
+            ...prev,
+            adaptiveMetrics: data.adaptive,
+            adaptiveLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, adaptiveLoading: false }));
+        }
+      })
+      .catch(() => {
+        adaptiveInFlightRef.current = false;
+        setState((prev) => ({ ...prev, adaptiveLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
+  // ─── Power & Pre-EQ Engine Polling (every 90 frames → ~4.5s) ─────────────────
+  const powerFrameRef = useRef(0);
+  const powerInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    if (powerInFlightRef.current) return;
+
+    const POLL_EVERY = 90;
+    powerFrameRef.current = (powerFrameRef.current + 1) % POLL_EVERY;
+    if (powerFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      led_orientations: Object.fromEntries(state.leds.map((l) => [l.id, l.orientation])),
+      led_beam_angles: Object.fromEntries(state.leds.map((l) => [l.id, l.beamAngle])),
+      room_dims: [state.room.width, state.room.length, state.room.height],
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+      // Module 6 params (needed to chain into Module 7)
+      num_devices: state.leds.length,
+      min_rate_bps: 5e6,
+      ber_max: 3.8e-3,
+      mode: "ADAPTIVE",
+      fft_size: 256,
+      // Module 7 params
+      total_power_budget_w: state.leds.reduce((s, l) => s + l.power, 0) * 0.001,
+      power_mode: "EQUAL_POWER",
+      pre_eq_mode: "REGULARIZED",
+      localization_reserve_w: 0.1,
+    };
+
+    powerInFlightRef.current = true;
+    setState((prev) => ({ ...prev, powerLoading: true }));
+
+    fetch("/api/power", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        powerInFlightRef.current = false;
+        if (data.success && data.power) {
+          setState((prev) => ({
+            ...prev,
+            powerMetrics: data.power,
+            powerLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, powerLoading: false }));
+        }
+      })
+      .catch(() => {
+        powerInFlightRef.current = false;
+        setState((prev) => ({ ...prev, powerLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
   // ─── 4. Handlers ──────────────────────────────────────────────────────────
   const handleDownloadZip = () => window.open("/api/export-zip");
 
@@ -799,6 +956,10 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
                   localizationLoading={state.localizationLoading}
                   integratedMetrics={state.integratedMetrics}
                   integratedLoading={state.integratedLoading}
+                  adaptiveMetrics={state.adaptiveMetrics}
+                  adaptiveLoading={state.adaptiveLoading}
+                  powerMetrics={state.powerMetrics}
+                  powerLoading={state.powerLoading}
                 />
               </div>
 
