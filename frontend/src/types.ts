@@ -200,6 +200,43 @@ export interface PowerMetrics {
   feasible_sum_rate_bps: number;
   warnings: string[];
 }
+}
+
+export interface ConstraintStatus {
+  localization_satisfied: boolean;
+  qos_satisfied: boolean;
+  ber_satisfied: boolean;
+  power_satisfied: boolean;
+  spectrum_satisfied: boolean;
+  overall_feasible: boolean;
+  localization_error_m: number;
+  localization_target_m: number;
+  rate_deficits_bps: Record<string, number>;
+  ber_excesses: Record<string, number>;
+  power_excess_w: number;
+}
+
+export interface JointMetrics {
+  iteration_count: number;
+  converged: boolean;
+  convergence_reason: string;
+  total_power_w: number;
+  loc_power_w: number;
+  comm_power_w: number;
+  per_device_rates_bps: Record<string, number>;
+  sum_rate_bps: number;
+  per_device_ber: Record<string, number>;
+  localization_error_m: number;
+  constraint_status: ConstraintStatus;
+  active_subcarriers_count: number;
+  history_summary: Array<{
+    iteration: number;
+    sum_rate_bps: number;
+    localization_error_m: number;
+    loc_power_w: number;
+    feasible: boolean;
+  }>;
+}
 
 // Integrated metrics returned by IntegratedVLCLEngine (Module 5)
 export interface IntegratedMetrics {
@@ -268,5 +305,8 @@ export interface SimulationState {
   // Power & Pre-Equalization engine metrics (Python backend — Module 7)
   powerMetrics: PowerMetrics | null;
   powerLoading: boolean;
-}
 
+  // Joint Optimization engine metrics (Python backend — Module 8)
+  jointMetrics: JointMetrics | null;
+  jointLoading: boolean;
+}

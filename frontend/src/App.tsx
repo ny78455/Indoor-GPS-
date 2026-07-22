@@ -125,6 +125,8 @@ export default function App() {
     adaptiveLoading: false,
     powerMetrics: null,
     powerLoading: false,
+    jointMetrics: null,
+    jointLoading: false,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("visualizer");
@@ -752,6 +754,84 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.frameIndex]);
 
+  // ─── Joint Optimization Engine Polling (every 120 frames → ~6s) ────────────────
+  const jointFrameRef = useRef(0);
+  const jointInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    if (jointInFlightRef.current) return;
+
+    const POLL_EVERY = 120;
+    jointFrameRef.current = (jointFrameRef.current + 1) % POLL_EVERY;
+    if (jointFrameRef.current !== 0) return;
+    if (Object.keys(state.distances).length === 0) return;
+
+    const payload = {
+      current_time: state.currentTime,
+      frame_index: state.frameIndex,
+      fps: state.fps,
+      receiver_position: state.receiver.position,
+      receiver_orientation: state.receiver.orientation,
+      receiver_velocity: state.receiver.velocity,
+      receiver_acceleration: state.receiver.acceleration,
+      receiver_angles: {
+        roll: state.receiver.roll,
+        pitch: state.receiver.pitch,
+        yaw: state.receiver.yaw,
+      },
+      led_positions: Object.fromEntries(state.leds.map((l) => [l.id, l.position])),
+      led_powers: Object.fromEntries(state.leds.map((l) => [l.id, l.power])),
+      led_active: Object.fromEntries(state.leds.map((l) => [l.id, true])),
+      led_orientations: Object.fromEntries(state.leds.map((l) => [l.id, l.orientation])),
+      led_beam_angles: Object.fromEntries(state.leds.map((l) => [l.id, l.beamAngle])),
+      room_dims: [state.room.width, state.room.length, state.room.height],
+      distances: state.distances,
+      incident_angles: state.incidentAngles,
+      irradiance_angles: state.irradianceAngles,
+      visibility_matrix: state.visibilityMatrix,
+      los_matrix: state.losMatrix,
+      blocking_obstacles: state.blockingObstacles,
+      obstacles: state.obstacles,
+      // Joint Module 8 Params
+      num_devices: state.leds.length,
+      min_rate_bps: 5e6,
+      ber_max: 3.8e-3,
+      target_localization_error_m: 0.20,
+      total_power_budget_w: 40.0,
+      per_led_max_power_w: 10.0,
+      power_mode: "WATER_FILLING",
+      pre_eq_mode: "REGULARIZED",
+      max_iterations: 6,
+    };
+
+    jointInFlightRef.current = true;
+    setState((prev) => ({ ...prev, jointLoading: true }));
+
+    fetch("/api/joint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        jointInFlightRef.current = false;
+        if (data.success && data.joint) {
+          setState((prev) => ({
+            ...prev,
+            jointMetrics: data.joint,
+            jointLoading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, jointLoading: false }));
+        }
+      })
+      .catch(() => {
+        jointInFlightRef.current = false;
+        setState((prev) => ({ ...prev, jointLoading: false }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.frameIndex]);
+
   // ─── 4. Handlers ──────────────────────────────────────────────────────────
   const handleDownloadZip = () => window.open("/api/export-zip");
 
@@ -945,7 +1025,7 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
             <div className="w-1/4 h-full flex flex-col gap-3 min-w-[300px]">
 
               {/* Telemetry Scrollable Panel */}
-              <div className="flex-1 overflow-hidden border border-slate-800 rounded-2xl bg-[#0b1120] p-4 shadow-2xl">
+              <div className="flex-1 min-h-0 overflow-hidden border border-slate-800 rounded-2xl bg-[#0b1120] p-4 shadow-2xl">
                 <DebugOverlay
                   state={state}
                   physicsMetrics={state.physicsMetrics}
@@ -960,6 +1040,8 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
                   adaptiveLoading={state.adaptiveLoading}
                   powerMetrics={state.powerMetrics}
                   powerLoading={state.powerLoading}
+                  jointMetrics={state.jointMetrics}
+                  jointLoading={state.jointLoading}
                 />
               </div>
 

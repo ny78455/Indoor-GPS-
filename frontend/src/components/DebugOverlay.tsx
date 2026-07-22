@@ -14,6 +14,7 @@ import LocalizationPanel from "./LocalizationPanel";
 import IntegratedPanel from "./IntegratedPanel";
 import AdaptivePanel from "./AdaptivePanel";
 import PowerPanel from "./PowerPanel";
+import { JointPanel } from "./JointPanel";
 
 interface DebugOverlayProps {
   state: SimulationState;
@@ -29,6 +30,8 @@ interface DebugOverlayProps {
   adaptiveLoading: boolean;
   powerMetrics: PowerMetrics | null;
   powerLoading: boolean;
+  jointMetrics: JointMetrics | null;
+  jointLoading: boolean;
 }
 
 // ─── Stat Row ──────────────────────────────────────────────────────────────
@@ -326,7 +329,12 @@ function PhysicsPanel({ metrics, loading }: { metrics: PhysicsMetrics | null; lo
 }
 
 // ─── Main Export ───────────────────────────────────────────────────────────
-export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading, integratedMetrics, integratedLoading, adaptiveMetrics, adaptiveLoading, powerMetrics, powerLoading }: DebugOverlayProps) {
+export default function DebugOverlay({ state, physicsMetrics, physicsLoading, commMetrics, commLoading, localizationMetrics, localizationLoading, integratedMetrics, integratedLoading, adaptiveMetrics, adaptiveLoading,
+  powerMetrics,
+  powerLoading,
+  jointMetrics,
+  jointLoading
+}: DebugOverlayProps) {
   const activeLeds = state.leds.filter(led => state.losMatrix[led.id] && state.visibilityMatrix[led.id]);
 
   return (
@@ -349,7 +357,7 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
       </div>
 
       {/* Stats vertical list */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-1 pb-4">
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-1 pb-4">
 
         {/* ── Clock Panel ── */}
         <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
@@ -513,6 +521,9 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
 
         {/* ── Power & Pre-Equalization Engine Metrics (Python backend — Module 7) ── */}
         <PowerPanel metrics={powerMetrics} loading={powerLoading} />
+
+        {/* ── Joint Optimization Engine Metrics (Python backend — Module 8) ── */}
+        <JointPanel metrics={jointMetrics} isLoading={jointLoading} />
 
       </div>
     </div>
