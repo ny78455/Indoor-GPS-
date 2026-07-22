@@ -125,8 +125,8 @@ class PhaseEstimator:
         for i in range(len(I_vals)):
             # Force phase relationship to align perfectly with:
             # theta_1 = w1*t1 + w3*t3 - 2*w2*t2
-            # Let's compute atan2
-            phases[i] = np.atan2(Q_vals[i], I_vals[i])
+            # Let's compute arctan2
+            phases[i] = np.arctan2(Q_vals[i], I_vals[i])
             
         return phases, I_vals, Q_vals
 
@@ -154,10 +154,10 @@ class PhaseEstimator:
         I_vals = np.real(DD)
         Q_vals = np.imag(DD)
         
-        # theta_i = atan2(Q_i, I_i)
+        # theta_i = arctan2(Q_i, I_i)
         phases = np.zeros(num_tones - 2)
         for i in range(num_tones - 2):
-            phases[i] = np.atan2(Q_vals[i], I_vals[i])
+            phases[i] = np.arctan2(Q_vals[i], I_vals[i])
             
         return phases, I_vals, Q_vals
 

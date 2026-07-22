@@ -25,6 +25,9 @@ from VLCL_AI.integrated_vlcl.power_mapper import MultiLedPowerMapper
 from VLCL_AI.integrated_vlcl.transmitter import IntegratedVLCLTransmitter
 from VLCL_AI.integrated_vlcl.receiver import IntegratedVLCLReceiver
 from VLCL_AI.integrated_vlcl.state import IntegratedVLCLState
+from VLCL_AI.adaptive.engine import AdaptiveTransmissionEngine
+from VLCL_AI.adaptive.decision import AllocationDecision
+from VLCL_AI.communication.snr import compute_communication_snr
 
 class IntegratedVLCLEngine:
     """
@@ -52,6 +55,9 @@ class IntegratedVLCLEngine:
     def initialize(self):
         """Instantiates all required sub-components and builds integrated transmitter/receiver chains."""
         cfg_comm = self.comm_config.config
+        
+        # Module 6 Adaptive Engine
+        self.adaptive_engine = AdaptiveTransmissionEngine()
         
         # Communication base modules
         self.bit_generator = BitGenerator(seed=cfg_comm["simulation"]["random_seed"])
@@ -178,16 +184,47 @@ class IntegratedVLCLEngine:
         env_state: EnvironmentState,
         physics_state: PhysicsState,
         bits_dict: Optional[Dict[int, np.ndarray]] = None,
-        modulation_order_dict: Optional[Dict[int, int]] = None
+        modulation_order_dict: Optional[Dict[int, int]] = None,
+        allocation_decision: Optional[AllocationDecision] = None,
+        adaptive_mode: bool = False
     ) -> IntegratedVLCLState:
         """
         Executes a single step of the integrated physical-layer simulation.
         
-        1. Generates composite transmitter waveforms.
-        2. Simulates physical channel propagation with LED frequency roll-offs and delay.
-        3. Separates and decodes multi-user communication streams.
-        4. Separates and estimates 3D coordinate localization details.
+        1. If adaptive_mode is True and allocation_decision is None, derives allocation via Module 6.
+        2. Generates composite transmitter waveforms.
+        3. Simulates physical channel propagation with LED frequency roll-offs and delay.
+        4. Separates and decodes multi-user communication streams.
+        5. Separates and estimates 3D coordinate localization details.
         """
+        # Module 6 Adaptive Integration
+        if adaptive_mode and allocation_decision is None:
+            # Estimate SNR per LED / subcarrier
+            num_leds = self.power_mapper.num_leds
+            N = self.grid.fft_size
+            snr_matrix = np.zeros((num_leds, N), dtype=float)
+            
+            for k in range(num_leds):
+                led_id = k + 1
+                gains = np.ones((num_leds, N)) * physics_state.total_gains.get(led_id, 1e-3)
+                powers = np.ones((N, num_leds)) * 1.0
+                noise_var = physics_state.noise_variances.get(led_id, 1e-12)
+                snr_matrix[k, :] = compute_communication_snr(
+                    responsivity=0.54,
+                    subcarrier_powers=powers,
+                    channel_gains=gains,
+                    noise_variance=noise_var
+                )
+                
+            dev_ids = list(range(1, num_leds + 1))
+            min_rates = {dev_id: 1.0e6 for dev_id in dev_ids}
+            allocation_decision = self.adaptive_engine.allocate_from_snr_matrix(
+                snr_matrix=snr_matrix,
+                device_ids=dev_ids,
+                min_rates_bps=min_rates,
+                grid=self.grid
+            )
+
         # Determine modulation orders and bits
         orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}
         
