@@ -1000,11 +1000,11 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
       </header>
 
       {/* ── Main Area (Fills remaining height) ── */}
-      <main className="flex-1 w-full max-w-[1920px] mx-auto flex flex-col gap-3 p-3 overflow-hidden">
+      <main className="flex-1 min-h-0 w-full max-w-[1920px] mx-auto flex flex-col gap-3 p-3 overflow-hidden">
 
         {/* ── Dashboard Tab ── */}
         {activeTab === "visualizer" && (
-          <div className="flex-1 w-full flex flex-row gap-3 overflow-hidden">
+          <div className="flex-1 min-h-0 w-full flex flex-row gap-3 overflow-hidden">
 
             {/* Left Column: Controls (25%) */}
             <div className="w-1/4 h-full flex flex-col min-w-[300px]">
@@ -1022,7 +1022,7 @@ ${state.obstacles.map((obs) => `  - id: "${obs.id}"
             </div>
 
             {/* Right Column: Telemetry & Actions (25%) */}
-            <div className="w-1/4 h-full flex flex-col gap-3 min-w-[300px]">
+            <div className="w-1/4 h-full min-h-0 flex flex-col gap-3 min-w-[300px]">
 
               {/* Telemetry Scrollable Panel */}
               <div className="flex-1 min-h-0 overflow-hidden border border-slate-800 rounded-2xl bg-[#0b1120] p-4 shadow-2xl">

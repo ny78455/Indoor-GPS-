@@ -357,7 +357,7 @@ export default function DebugOverlay({ state, physicsMetrics, physicsLoading, co
       </div>
 
       {/* Stats vertical list */}
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-1 pb-4">
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-1 pb-4 [&>*]:flex-shrink-0">
 
         {/* ── Clock Panel ── */}
         <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
