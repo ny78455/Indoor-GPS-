@@ -258,7 +258,14 @@ class IntegratedVLCLEngine:
             self.power_mapper.power_matrix = power_decision.power_allocation.per_subcarrier_power_matrix
 
         # Determine modulation orders and bits
-        orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}
+        if allocation_decision is not None and hasattr(allocation_decision, "modulation_map"):
+            orders = {}
+            for (dev_id, sc_idx), m in allocation_decision.modulation_map.items():
+                if dev_id not in orders:
+                    orders[dev_id] = {}
+                orders[dev_id][sc_idx] = m
+        else:
+            orders = modulation_order_dict or {led_id: 16 for led_id in range(1, self.power_mapper.num_leds + 1)}
         
         actual_bits_dict = {}
         for led_id in range(1, self.power_mapper.num_leds + 1):

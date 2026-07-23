@@ -123,7 +123,7 @@ class IntegratedVLCLReceiver:
         rx_waveform: np.ndarray,
         transmitted_bits_dict: Dict[int, np.ndarray],
         physics_state: PhysicsState,
-        modulation_order_dict: Optional[Dict[int, int]] = None
+        modulation_order_dict: Optional[Dict[int, Any]] = None
     ) -> Dict[int, Dict[str, Any]]:
         """
         Processes the communication branch for all active LED groups/users:
@@ -203,9 +203,33 @@ class IntegratedVLCLReceiver:
             p_comm_safe = np.where(p_comm_tiled < 1e-15, 1e-15, p_comm_tiled)
             normalized_symbols = equalized_symbols / np.sqrt(p_comm_safe)
             
-            # Slice constellation and decode
-            mod_order = orders.get(led_id, 16)
-            decoded_bits = self.modem.demodulate(normalized_symbols, mod_order)
+            # Slice constellation and decode per subcarrier
+            mod_map = orders.get(led_id, 16)
+            if isinstance(mod_map, (int, float)):
+                m_dict = {idx: int(mod_map) for idx in independent_pos}
+            elif isinstance(mod_map, dict):
+                m_dict = mod_map
+            else:
+                m_dict = {idx: 16 for idx in independent_pos}
+
+            # Reshape equalized symbols back to (num_frames, num_pos)
+            frames_syms = normalized_symbols.reshape(num_frames, num_pos)
+            
+            bits_list = []
+            for f_idx in range(num_frames):
+                for i, sc_idx in enumerate(independent_pos):
+                    M = m_dict.get(sc_idx, 16)
+                    k = self.modem.bits_per_symbol(M)
+                    if k > 0:
+                        sym = frames_syms[f_idx, i]
+                        # demodulate expects array of symbols
+                        sc_bits = self.modem.demodulate(np.array([sym]), M)
+                        bits_list.append(sc_bits)
+                        
+            if bits_list:
+                decoded_bits = np.concatenate(bits_list)
+            else:
+                decoded_bits = np.array([], dtype=int)
             
             # Crop to original transmitted payload size
             tx_bits = transmitted_bits_dict.get(led_id, np.array([], dtype=int))

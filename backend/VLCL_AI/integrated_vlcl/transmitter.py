@@ -41,60 +41,71 @@ class IntegratedVLCLTransmitter:
         self,
         led_id: int,
         bits: np.ndarray,
-        modulation_order: int = 16
+        modulation_map: Any = 16
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Modulates communication bits specifically on the subcarriers assigned to LED i's SG.
         Places zeros on all other subcarriers, and ensures Hermitian symmetry.
+        Supports per-subcarrier modulation map for OFDMA.
         """
         g_id = led_id  # By default group g corresponds to LED g
         sc_indices = self.partitioner.comm_groups.get(g_id, [])
         
         if len(sc_indices) == 0:
-            # No subcarriers allocated to this LED. Return zero waveform.
             num_samples = self.fft_size + self.cp_length
             return np.zeros(num_samples), np.zeros((1, self.fft_size), dtype=complex), bits
             
-        k = self.modem.bits_per_symbol(modulation_order)
-        
-        # Determine independent positive subcarriers assigned to this LED's group
         half_n = self.fft_size // 2
         independent_pos = sorted([idx for idx in sc_indices if 0 < idx < half_n])
         num_pos = len(independent_pos)
         
+        if num_pos == 0:
+            num_samples = self.fft_size + self.cp_length
+            return np.zeros(num_samples), np.zeros((1, self.fft_size), dtype=complex), bits
+            
+        # Convert scalar modulation to dict if necessary
+        if isinstance(modulation_map, (int, float)):
+            m_dict = {idx: int(modulation_map) for idx in independent_pos}
+        elif isinstance(modulation_map, dict):
+            m_dict = modulation_map
+        else:
+            m_dict = {idx: 16 for idx in independent_pos}
+            
+        # Calculate bits per frame
+        bits_per_frame = sum(self.modem.bits_per_symbol(m_dict.get(idx, 16)) for idx in independent_pos)
+        if bits_per_frame == 0:
+            num_samples = self.fft_size + self.cp_length
+            return np.zeros(num_samples), np.zeros((1, self.fft_size), dtype=complex), bits
+            
         if len(bits) == 0:
-            # Generate dummy bits
-            bits = self.bit_generator.generate(10 * k * num_pos)
+            bits = self.bit_generator.generate(10 * bits_per_frame)
             
-        qam_symbols = self.modem.modulate(bits, modulation_order)
+        num_frames = int(np.ceil(len(bits) / bits_per_frame))
+        total_bits_needed = num_frames * bits_per_frame
         
-        # Group into OFDM frames
-        num_frames = int(np.ceil(len(qam_symbols) / num_pos))
-        padded_len = num_frames * num_pos
-        if len(qam_symbols) < padded_len:
-            extra_bits_needed = (padded_len - len(qam_symbols)) * k
-            extra_bits = self.bit_generator.generate(extra_bits_needed)
-            extra_symbols = self.modem.modulate(extra_bits, modulation_order)
-            qam_symbols = np.concatenate([qam_symbols, extra_symbols[:padded_len - len(qam_symbols)]])
-        
-        frames_qam = qam_symbols.reshape(num_frames, num_pos)
-        
-        # Build frequency grid
+        if len(bits) < total_bits_needed:
+            extra_bits = self.bit_generator.generate(total_bits_needed - len(bits))
+            bits = np.concatenate([bits, extra_bits])
+            
+        # Modulate and map symbols
         freq_grid = np.zeros((num_frames, self.fft_size), dtype=complex)
-        
-        # Retrieve allocated communication powers for these subcarriers
         p_comm = self.power_mapper.power_matrix[led_id - 1, independent_pos]
-        scaled_symbols = frames_qam * np.sqrt(np.maximum(0.0, p_comm))
         
-        # Place symbols on positive carriers and apply Hermitian symmetry
+        bit_ptr = 0
         for f_idx in range(num_frames):
-            freq_grid[f_idx, independent_pos] = scaled_symbols[f_idx]
-            for k_bin in range(1, half_n):
-                freq_grid[f_idx, self.fft_size - k_bin] = np.conj(freq_grid[f_idx, k_bin])
-                
-            freq_grid[f_idx, 0] = 0.0 + 0.0j
-            freq_grid[f_idx, half_n] = 0.0 + 0.0j
-            
+            for i, sc_idx in enumerate(independent_pos):
+                M = m_dict.get(sc_idx, 16)
+                k = self.modem.bits_per_symbol(M)
+                if k > 0:
+                    chunk = bits[bit_ptr : bit_ptr + k]
+                    bit_ptr += k
+                    sym = self.modem.modulate(chunk, M)[0]
+                    # Scale by allocated power
+                    scaled_sym = sym * np.sqrt(max(0.0, p_comm[i]))
+                    freq_grid[f_idx, sc_idx] = scaled_sym
+                    # Hermitian symmetry
+                    freq_grid[f_idx, self.fft_size - sc_idx] = np.conj(scaled_sym)
+                    
         # Compute IFFT
         time_frames = np.fft.ifft(freq_grid, axis=1)
         time_frames_real = np.real(time_frames)
@@ -159,7 +170,7 @@ class IntegratedVLCLTransmitter:
     def transmit(
         self,
         bits_dict: Dict[int, np.ndarray],
-        modulation_order_dict: Optional[Dict[int, int]] = None,
+        modulation_order_dict: Optional[Dict[int, Any]] = None,
         initial_phase: float = 0.0
     ) -> Tuple[Dict[int, np.ndarray], Dict[int, Dict[str, Any]], Dict[int, np.ndarray], Dict[int, np.ndarray]]:
         """
