@@ -28,7 +28,7 @@ function sanitizeRows(value: unknown): TelemetryRow[] {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const PORT = 3000;
 
   const BASE_DIR = fs.existsSync(path.join(__dirname, "package.json"))
     ? __dirname
@@ -206,10 +206,10 @@ obstacles:
   // API Route: Run python simulation
   app.post("/api/run", (req, res) => {
     const scriptPath = path.join(BASE_DIR, "VLCL_AI", "examples", "demo_environment.py");
-    
+
     // Ensure directories exist
     fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
-    
+
     // Execute python script
     const isWin = process.platform === "win32";
     const venvPythonPath = isWin
@@ -239,7 +239,7 @@ obstacles:
 
     // Inline Python script that instantiates PhysicsEngine and computes metrics
     const inlineScript = `
-import sys, os, json
+import sys, os, json, math
 sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
 from VLCL_AI.environment.state import EnvironmentState
 from VLCL_AI.physics.physics_engine import PhysicsEngine
@@ -263,8 +263,8 @@ state = EnvironmentState(
     led_orientations={int(k): v for k,v in data["led_orientations"].items()},
     led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
     distances={int(k): v for k,v in data["distances"].items()},
-    incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-    irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+    incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+    irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
     visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
     los_matrix={int(k): v for k,v in data["los_matrix"].items()},
     blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -332,7 +332,7 @@ print(json.dumps(output))
     const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
     const inlineScript = `
-import sys, os, json
+import sys, os, json, math
 sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
 from VLCL_AI.environment.state import EnvironmentState
 from VLCL_AI.physics.physics_engine import PhysicsEngine
@@ -357,8 +357,8 @@ env_state = EnvironmentState(
     led_orientations={int(k): v for k,v in data["led_orientations"].items()},
     led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
     distances={int(k): v for k,v in data["distances"].items()},
-    incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-    irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+    incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+    irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
     visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
     los_matrix={int(k): v for k,v in data["los_matrix"].items()},
     blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -378,12 +378,12 @@ print(json.dumps(comm_state.to_summary_dict()))
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_comm_tmp.py");
-    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_comm_input.json");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_comm_input.json");
 
     try {
       fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
       fs.writeFileSync(tmpScript, inlineScript, "utf-8");
-      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
     } catch (e: any) {
       return res.status(500).json({ error: "Failed to write temp files: " + e.message });
     }
@@ -418,7 +418,7 @@ print(json.dumps(comm_state.to_summary_dict()))
     const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
     const inlineScript = `
-import sys, os, json
+import sys, os, json, math
 try:
     sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
     from VLCL_AI.environment.state import EnvironmentState
@@ -444,8 +444,8 @@ try:
         led_orientations={int(k): v for k,v in data["led_orientations"].items()},
         led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
         distances={int(k): v for k,v in data["distances"].items()},
-        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
         visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
         los_matrix={int(k): v for k,v in data["los_matrix"].items()},
         blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -476,12 +476,12 @@ except Exception as e:
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_loc_tmp.py");
-    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_loc_input.json");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_loc_input.json");
 
     try {
       fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
       fs.writeFileSync(tmpScript, inlineScript, "utf-8");
-      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
     } catch (e: any) {
       return res.status(500).json({ error: "Failed to write temp files: " + e.message });
     }
@@ -520,7 +520,7 @@ except Exception as e:
     const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
     const inlineScript = `
-import sys, os, json
+import sys, os, json, math
 try:
     sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
     from VLCL_AI.environment.state import EnvironmentState
@@ -546,8 +546,8 @@ try:
         led_orientations={int(k): v for k,v in data["led_orientations"].items()},
         led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
         distances={int(k): v for k,v in data["distances"].items()},
-        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
         visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
         los_matrix={int(k): v for k,v in data["los_matrix"].items()},
         blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -573,12 +573,12 @@ except Exception as e:
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_integrated_tmp.py");
-    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_integrated_input.json");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_integrated_input.json");
 
     try {
       fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
       fs.writeFileSync(tmpScript, inlineScript, "utf-8");
-      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
     } catch (e: any) {
       return res.status(500).json({ error: "Failed to write temp files: " + e.message });
     }
@@ -615,7 +615,7 @@ except Exception as e:
     const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
     const inlineScript = `
-import sys, os, json, numpy as np
+import sys, os, json, math, numpy as np
 try:
     sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
     from VLCL_AI.environment.state import EnvironmentState
@@ -644,8 +644,8 @@ try:
         led_orientations={int(k): v for k,v in data["led_orientations"].items()},
         led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
         distances={int(k): v for k,v in data["distances"].items()},
-        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
         visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
         los_matrix={int(k): v for k,v in data["los_matrix"].items()},
         blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -712,12 +712,12 @@ except Exception as e:
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_adaptive_tmp.py");
-    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_adaptive_input.json");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_adaptive_input.json");
 
     try {
       fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
       fs.writeFileSync(tmpScript, inlineScript, "utf-8");
-      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
     } catch (e: any) {
       return res.status(500).json({ error: "Failed to write temp files: " + e.message });
     }
@@ -755,7 +755,7 @@ except Exception as e:
     const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
     const inlineScript = `
-import sys, os, json, numpy as np
+import sys, os, json, math, numpy as np
 try:
     sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
     from VLCL_AI.environment.state import EnvironmentState
@@ -785,8 +785,8 @@ try:
         led_orientations={int(k): v for k,v in data["led_orientations"].items()},
         led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
         distances={int(k): v for k,v in data["distances"].items()},
-        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
         visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
         los_matrix={int(k): v for k,v in data["los_matrix"].items()},
         blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -877,12 +877,12 @@ except Exception as e:
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_power_tmp.py");
-    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_power_input.json");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_power_input.json");
 
     try {
       fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
       fs.writeFileSync(tmpScript, inlineScript, "utf-8");
-      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
     } catch (e: any) {
       return res.status(500).json({ error: "Failed to write temp files: " + e.message });
     }
@@ -920,7 +920,7 @@ except Exception as e:
     const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : (isWin ? "python" : "python3");
 
     const inlineScript = `
-import sys, os, json, numpy as np
+import sys, os, json, math, numpy as np
 try:
     sys.path.insert(0, r"${BASE_DIR.replace(/\\/g, "\\\\")}")
     from VLCL_AI.environment.state import EnvironmentState
@@ -947,8 +947,8 @@ try:
         led_orientations={int(k): v for k,v in data["led_orientations"].items()},
         led_beam_angles={int(k): v for k,v in data["led_beam_angles"].items()},
         distances={int(k): v for k,v in data["distances"].items()},
-        incident_angles_rad={int(k): v for k,v in data["incident_angles"].items()},
-        irradiance_angles_rad={int(k): v for k,v in data["irradiance_angles"].items()},
+        incident_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["incident_angles"].items()},
+        irradiance_angles_rad={int(k): v * math.pi / 180.0 for k,v in data["irradiance_angles"].items()},
         visibility_matrix={int(k): v for k,v in data["visibility_matrix"].items()},
         los_matrix={int(k): v for k,v in data["los_matrix"].items()},
         blocking_obstacles={int(k): v for k,v in data["blocking_obstacles"].items()},
@@ -1007,12 +1007,12 @@ except Exception as e:
 `;
 
     const tmpScript = path.join(BASE_DIR, "VLCL_AI", "logs", "_joint_tmp.py");
-    const tmpInput  = path.join(BASE_DIR, "VLCL_AI", "logs", "_joint_input.json");
+    const tmpInput = path.join(BASE_DIR, "VLCL_AI", "logs", "_joint_input.json");
 
     try {
       fs.mkdirSync(path.join(BASE_DIR, "VLCL_AI", "logs"), { recursive: true });
       fs.writeFileSync(tmpScript, inlineScript, "utf-8");
-      fs.writeFileSync(tmpInput,  JSON.stringify(envState), "utf-8");
+      fs.writeFileSync(tmpInput, JSON.stringify(envState), "utf-8");
     } catch (e: any) {
       return res.status(500).json({ error: "Failed to write temp files: " + e.message });
     }
@@ -1051,7 +1051,7 @@ except Exception as e:
   app.get("/api/export-zip", (req, res) => {
     const zipPath = path.join(BASE_DIR, "dist", "VLCL_AI_Module1.zip");
     fs.mkdirSync(path.dirname(zipPath), { recursive: true });
-    
+
     // Use the system zip command
     exec(`zip -r "${zipPath}" VLCL_AI`, { cwd: BASE_DIR }, (error, stdout, stderr) => {
       if (error) {
@@ -1064,7 +1064,7 @@ except Exception as e:
   app.get("/api/files", (req, res) => {
     const basePath = path.join(BASE_DIR, "VLCL_AI");
     const filesList: any[] = [];
-    
+
     function scanDir(dir: string) {
       if (!fs.existsSync(dir)) return;
       const items = fs.readdirSync(dir);
@@ -1086,7 +1086,7 @@ except Exception as e:
         }
       }
     }
-    
+
     try {
       scanDir(basePath);
       res.json(filesList);
@@ -1098,7 +1098,10 @@ except Exception as e:
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : undefined
+      },
       appType: "spa",
       root: path.join(BASE_DIR, "../frontend"),
     });

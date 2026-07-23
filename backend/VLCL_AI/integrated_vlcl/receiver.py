@@ -113,7 +113,8 @@ class IntegratedVLCLReceiver:
         else:
             rng = np.random.default_rng()
         noise = rng.normal(0, std_noise, size=n_samples)
-        composite_rx_noisy = composite_rx_clean + noise
+        from VLCL_AI.physics.constants import DEFAULT_RESPONSIVITY, DEFAULT_TRANSIMPEDANCE_GAIN
+        composite_rx_noisy = (composite_rx_clean * DEFAULT_RESPONSIVITY * DEFAULT_TRANSIMPEDANCE_GAIN) + (noise * DEFAULT_TRANSIMPEDANCE_GAIN)
         
         return composite_rx_noisy, t
 
@@ -248,7 +249,8 @@ class IntegratedVLCLReceiver:
                 start = f_i * frame_len + cp_len
                 frame_body = rx_waveform[start:start + fft_size]
                 if len(frame_body) == fft_size:
-                    Y_avg += np.fft.fft(frame_body)
+                    Y_f = np.fft.fft(frame_body)
+                    Y_avg += Y_f
             Y_full = Y_avg / max(1, num_frames)
         else:
             rx_no_cp = rx_waveform[:fft_size]
@@ -263,6 +265,7 @@ class IntegratedVLCLReceiver:
             loc_phasors.append(Y_full[bin_idx])
             
         raw_phases, I_vals, Q_vals = self.phase_estimator.process_phase_equivalent(np.array(loc_phasors))
+        
         
         # 2. Phase unwrapping
         unwrapped_phases = self.phase_unwrapper.unwrap(raw_phases, prev_phases)
