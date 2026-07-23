@@ -72,7 +72,7 @@ class IntegratedVLCLTransmitter:
             m_dict = {idx: 16 for idx in independent_pos}
             
         # Calculate bits per frame
-        bits_per_frame = sum(self.modem.bits_per_symbol(m_dict.get(idx, 16)) for idx in independent_pos)
+        bits_per_frame = sum(self.modem.bits_per_symbol(m_dict.get(idx, 0)) for idx in independent_pos)
         if bits_per_frame == 0:
             num_samples = self.fft_size + self.cp_length
             return np.zeros(num_samples), np.zeros((1, self.fft_size), dtype=complex), bits
@@ -94,7 +94,7 @@ class IntegratedVLCLTransmitter:
         bit_ptr = 0
         for f_idx in range(num_frames):
             for i, sc_idx in enumerate(independent_pos):
-                M = m_dict.get(sc_idx, 16)
+                M = m_dict.get(sc_idx, 0)
                 k = self.modem.bits_per_symbol(M)
                 if k > 0:
                     chunk = bits[bit_ptr : bit_ptr + k]
@@ -107,7 +107,7 @@ class IntegratedVLCLTransmitter:
                     freq_grid[f_idx, self.fft_size - sc_idx] = np.conj(scaled_sym)
                     
         # Compute IFFT
-        time_frames = np.fft.ifft(freq_grid, axis=1)
+        time_frames = np.fft.ifft(freq_grid, axis=1) * self.fft_size
         time_frames_real = np.real(time_frames)
         
         # Add Cyclic Prefix
@@ -154,7 +154,7 @@ class IntegratedVLCLTransmitter:
                 power = self.power_mapper.power_matrix[led_id - 1, bin_idx]
                 phase_comp = np.arctan(freq / f_3db)
                 
-                x_loc_frame += (2.0 * np.sqrt(power) / fft_size) * np.cos(
+                x_loc_frame += (2.0 * np.sqrt(power)) * np.cos(
                     2.0 * np.pi * bin_idx * n / fft_size + initial_phase + phase_comp
                 )
 

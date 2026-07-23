@@ -22,7 +22,7 @@ class AdaptiveModulationController:
         self.supported_modulations = sorted(supported_modulations or [2, 4, 16, 64, 256])
         self.threshold_table = threshold_table or SNRThresholdTable(ber_max, self.supported_modulations)
 
-    def select_modulation_order(self, snr_linear: float) -> Tuple[int, float, bool]:
+    def select_modulation_order(self, comm_subcarrier_snr_linear: float) -> Tuple[int, float, bool]:
         """
         Selects highest modulation order M satisfying BER(M, snr_linear) <= BER_max.
         
@@ -33,8 +33,8 @@ class AdaptiveModulationController:
             Tuple of (M, predicted_ber, is_feasible).
             If no supported M satisfies the BER target, returns (0, 1.0, False).
         """
-        snr_linear = float(max(snr_linear, 0.0))
-        if snr_linear <= 0.0:
+        comm_subcarrier_snr_linear = float(max(comm_subcarrier_snr_linear, 0.0))
+        if comm_subcarrier_snr_linear <= 0.0:
             return 0, 1.0, False
 
         best_M = 0
@@ -43,7 +43,7 @@ class AdaptiveModulationController:
 
         # Evaluate candidate modulation orders from largest to smallest
         for M in reversed(self.supported_modulations):
-            predicted_ber = float(BERCalculator.compute_analytical_qam(snr_linear, M))
+            predicted_ber = float(BERCalculator.compute_analytical_qam(comm_subcarrier_snr_linear, M))
             if predicted_ber <= self.ber_max + 1e-12: # Include tolerance for float comparison
                 best_M = M
                 best_ber = predicted_ber

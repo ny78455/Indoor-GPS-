@@ -53,6 +53,6 @@ def compute_communication_snr(
     safe_noise = noise_variance if noise_variance > 1e-18 else 1e-18
 
     # Linear SNR per subcarrier
-    snr_linear = numerator / safe_noise
+    comm_subcarrier_snr_linear = numerator / safe_noise
 
-    return snr_linear
+    return comm_subcarrier_snr_linear

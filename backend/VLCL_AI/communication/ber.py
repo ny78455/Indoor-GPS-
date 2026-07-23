@@ -53,7 +53,7 @@ class BERCalculator:
         return ber, bit_errors
 
     @staticmethod
-    def compute_analytical_qam(snr_linear: Union[float, np.ndarray], M: int) -> Union[float, np.ndarray]:
+    def compute_analytical_qam(comm_subcarrier_snr_linear: Union[float, np.ndarray], M: int) -> Union[float, np.ndarray]:
         """
         Computes theoretical BER of M-QAM over AWGN.
         Uses numerically stable erfc-based approximation.
@@ -63,15 +63,15 @@ class BERCalculator:
         if M not in {2, 4, 16, 64, 256}:
             raise VLCLCommunicationError(f"Unsupported modulation order M={M} for analytical BER calculation.")
             
-        snr_linear = np.asarray(snr_linear, dtype=float)
+        comm_subcarrier_snr_linear = np.asarray(comm_subcarrier_snr_linear, dtype=float)
         # Avoid negative SNR values
-        snr_linear = np.maximum(snr_linear, 0.0)
+        comm_subcarrier_snr_linear = np.maximum(comm_subcarrier_snr_linear, 0.0)
         
         k = np.log2(M)
         
         if M == 2:  # BPSK special case
             # Pb = 0.5 * erfc(sqrt(SNR))
-            return 0.5 * erfc(np.sqrt(snr_linear))
+            return 0.5 * erfc(np.sqrt(comm_subcarrier_snr_linear))
             
         # Square QAM: 4-QAM, 16-QAM, 64-QAM, 256-QAM
         # Pre-factor
@@ -83,6 +83,6 @@ class BERCalculator:
         # If SNR is Es/N0 (electrical SNR of symbol), then:
         # Q( sqrt( 3 * SNR_sym / (M - 1) ) )
         # To map Q(x) to erfc(y): y = x / sqrt(2). So erfc( sqrt( 3 * SNR_sym / (2 * (M - 1)) ) )
-        arg = np.sqrt(3.0 * snr_linear / (2.0 * (M - 1.0)))
+        arg = np.sqrt(3.0 * comm_subcarrier_snr_linear / (2.0 * (M - 1.0)))
         
         return 0.5 * coef * erfc(arg)

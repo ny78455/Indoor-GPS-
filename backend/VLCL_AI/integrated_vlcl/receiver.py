@@ -96,12 +96,14 @@ class IntegratedVLCLReceiver:
                     rx_body = np.real(np.fft.ifft(Y_body))
                     rx_cp = rx_body[-cp_len:] if cp_len > 0 else np.array([], dtype=float)
                     rx_led[start:end] = np.concatenate([rx_cp, rx_body])
-                else:
+                elif len(frame_samples) > 0:
                     X_part = np.fft.fft(frame_samples)
                     freqs_p = np.fft.fftfreq(len(frame_samples), d=1.0 / sample_rate)
                     H_p = h_optical * self.led_response.complex_response(freqs_p) * np.exp(-1j * 2.0 * np.pi * freqs_p * delay)
                     rx_led[start:end] = np.real(np.fft.ifft(X_part * H_p))
             
+            if len(rx_led) < n_samples:
+                rx_led = np.pad(rx_led, (0, n_samples - len(rx_led)), 'constant')
             composite_rx_clean += rx_led
             
         # 2. Add lumped white receiver noise
@@ -218,7 +220,7 @@ class IntegratedVLCLReceiver:
             bits_list = []
             for f_idx in range(num_frames):
                 for i, sc_idx in enumerate(independent_pos):
-                    M = m_dict.get(sc_idx, 16)
+                    M = m_dict.get(sc_idx, 0)
                     k = self.modem.bits_per_symbol(M)
                     if k > 0:
                         sym = frames_syms[f_idx, i]
@@ -286,14 +288,14 @@ class IntegratedVLCLReceiver:
                 start = f_i * frame_len + cp_len
                 frame_body = rx_waveform[start:start + fft_size]
                 if len(frame_body) == fft_size:
-                    Y_f = np.fft.fft(frame_body)
+                    Y_f = np.fft.fft(frame_body) / fft_size
                     Y_avg += Y_f
             Y_full = Y_avg / max(1, num_frames)
         else:
             rx_no_cp = rx_waveform[:fft_size]
             if len(rx_no_cp) < fft_size:
                 rx_no_cp = np.pad(rx_no_cp, (0, fft_size - len(rx_no_cp)))
-            Y_full = np.fft.fft(rx_no_cp)
+            Y_full = np.fft.fft(rx_no_cp) / fft_size
         
         subcarrier_spacing = sample_rate / fft_size
         loc_phasors = []

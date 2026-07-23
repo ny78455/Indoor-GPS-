@@ -70,8 +70,8 @@ class OFDMModulator:
             freq_grid[f_idx, 0] = 0.0 + 0.0j
             freq_grid[f_idx, half_n] = 0.0 + 0.0j
             
-        # Compute IFFT along axis=1
-        time_frames = np.fft.ifft(freq_grid, axis=1)
+        # Compute IFFT along axis=1 and scale by N to preserve time-domain power
+        time_frames = np.fft.ifft(freq_grid, axis=1) * self.N
         
         # Check that imaginary part is negligible
         max_imag = np.max(np.abs(np.imag(time_frames)))
@@ -125,8 +125,8 @@ class OFDMDemodulator:
         # Remove Cyclic Prefix
         frames_no_cp = frames[:, self.cp_length:]
         
-        # Perform FFT
-        freq_grid = np.fft.fft(frames_no_cp, axis=1)
+        # Perform FFT and scale by 1/N to preserve time-domain power scale
+        freq_grid = np.fft.fft(frames_no_cp, axis=1) / self.N
         
         # Extract active and pilot symbols
         active_indices = self.grid.get_active_indices()

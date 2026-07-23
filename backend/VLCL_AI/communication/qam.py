@@ -21,6 +21,8 @@ class QAMModem:
 
     def bits_per_symbol(self, M: int) -> int:
         """Returns log2(M) bits per symbol."""
+        if M == 0:
+            return 0
         if M not in self.supported_M:
             raise ModulationError(f"M={M} is not supported. Supported: {self.supported_M}")
         return int(np.log2(M))
