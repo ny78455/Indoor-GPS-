@@ -148,6 +148,9 @@ class IntegratedVLCLReceiver:
         half_n = self.fft_size // 2
         sample_rate = self.partitioner.grid.sample_rate
         
+        from VLCL_AI.physics.constants import DEFAULT_RESPONSIVITY, DEFAULT_TRANSIMPEDANCE_GAIN
+        electrical_gain = DEFAULT_RESPONSIVITY * DEFAULT_TRANSIMPEDANCE_GAIN
+
         # 4. Process each user group
         for led_id in range(1, self.power_mapper.num_leds + 1):
             g_id = led_id
@@ -174,7 +177,9 @@ class IntegratedVLCLReceiver:
             # Add phase rotation due to physical propagation delay
             delay = physics_state.propagation_times.get(led_id, 0.0)
             phase_rot = np.exp(-1j * 2.0 * np.pi * freqs * delay)
-            H_n = h_optical * h_led * phase_rot
+            
+            # Full channel response includes electrical conversions
+            H_n = h_optical * h_led * phase_rot * electrical_gain
             
             # Tile channel response for all OFDM frames
             H_n_tiled = np.tile(H_n, num_frames)
@@ -182,17 +187,25 @@ class IntegratedVLCLReceiver:
             # Retrieve noise variance for MMSE
             noise_var = physics_state.noise_variances.get(led_id, 1e-12)
             
+            # Retrieve subcarrier powers used at TX
+            p_comm = self.power_mapper.power_matrix[led_id - 1, independent_pos]
+            p_comm_tiled = np.tile(p_comm, num_frames)
+            
             # Equalize
             equalized_symbols = self.equalizer.equalize(
                 rx_symbols=rx_symbols_user,
                 h_channel=H_n_tiled,
                 noise_variance=noise_var,
-                subcarrier_powers=np.ones_like(H_n_tiled)
+                subcarrier_powers=p_comm_tiled
             )
+            
+            # Normalize by transmission power amplitude so standard QAM slicer works
+            p_comm_safe = np.where(p_comm_tiled < 1e-15, 1e-15, p_comm_tiled)
+            normalized_symbols = equalized_symbols / np.sqrt(p_comm_safe)
             
             # Slice constellation and decode
             mod_order = orders.get(led_id, 16)
-            decoded_bits = self.modem.demodulate(equalized_symbols, mod_order)
+            decoded_bits = self.modem.demodulate(normalized_symbols, mod_order)
             
             # Crop to original transmitted payload size
             tx_bits = transmitted_bits_dict.get(led_id, np.array([], dtype=int))
