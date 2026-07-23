@@ -190,12 +190,12 @@ class IntegratedVLCLTransmitter:
             # 2. Synthesize localization tones
             x_loc = self.generate_localization_led(led_id, num_samples, initial_phase)
             
-            # 3. Superpose components:
-            # Clip communication waveform cleanly to prevent non-linear intermodulation onto localization subcarriers
-            clipped_comm, metrics = self.dco_engine.process_transmitter_waveform(x_comm)
+            # 3. Superpose components FIRST before applying physical LED constraints:
+            # Combine unclipped communication signal with localization tones at driver summing node
+            composite_linear_signal = x_comm + x_loc
             
-            # Combine clipped communication signal with localization tones at driver summing node
-            clipped_signal = clipped_comm + x_loc
+            # Apply DCO-OFDM clipping to the combined composite signal, modeling true LED physical limits
+            clipped_signal, metrics = self.dco_engine.process_transmitter_waveform(composite_linear_signal)
             
             # Save outputs
             unipolar_signals[led_id] = clipped_signal

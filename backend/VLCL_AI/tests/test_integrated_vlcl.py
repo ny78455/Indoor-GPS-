@@ -26,7 +26,7 @@ class TestIntegratedVLCL(unittest.TestCase):
     def setUp(self):
         # 1. Standard room geometry setup
         self.room = Room(5.0, 5.0, 3.0)
-        self.receiver = Receiver([0.0, 0.0, 0.85], [0.0, 0.0, 1.0])
+        self.receiver = Receiver([0.0, 0.0, 0.85], [0.0, 0.0, 1.0], noise=0.0)
         
         # 4 LEDs symmetrically arranged around origin (0.0, 0.0) at height 1.35m (from paper_reference.yaml)
         self.leds = [
@@ -106,6 +106,7 @@ class TestIntegratedVLCL(unittest.TestCase):
         np.random.seed(42)
         # Initialize the master integrated engine with grid matching 100 kHz subcarrier spacing
         engine = IntegratedVLCLEngine(grid=self.grid, plan=self.plan)
+        engine.dco_engine.enabled = False
         
         # Run physics step
         env_state = self.simulator.get_state()

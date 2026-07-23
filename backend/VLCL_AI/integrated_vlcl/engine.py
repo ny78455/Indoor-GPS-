@@ -314,6 +314,11 @@ class IntegratedVLCLEngine:
         clipping_ratio_per_led = {led_id: metrics["clipping_ratio_pct"] for led_id, metrics in clipping_metrics.items()}
         dc_bias_per_led = {led_id: metrics["dc_bias"] for led_id, metrics in clipping_metrics.items()}
         
+        # Track best channel gain for adaptive metrics
+        best_gain = 0.0
+        if physics_state.total_gains:
+            best_gain = max(physics_state.total_gains.values())
+
         # Assemble composite IntegratedVLCLState
         state = IntegratedVLCLState(
             simulation_time=env_state.current_time,
@@ -325,7 +330,9 @@ class IntegratedVLCLEngine:
             metadata={
                 "num_samples": len(rx_waveform),
                 "sample_rate_hz": self.grid.sample_rate,
-                "power_decision": power_decision
+                "power_decision": power_decision,
+                "best_channel_gain": float(best_gain),
+                "modulation_orders": orders
             }
         )
         

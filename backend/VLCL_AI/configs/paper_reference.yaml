@@ -125,10 +125,9 @@ localization:
 
   # [NOT_IN_PAPER] Simulation sample rate. Paper describes analog
   # hardware (oscilloscope capture); no digital sample rate given.
-  # Nyquist minimum: 2 * 4.8 MHz = 9.6 MHz.
-  # Using 20 MHz to provide a realistic anti-alias filter margin.
-  # This is a DOCUMENTED SIMULATION ASSUMPTION, not a paper value.
-  sample_rate_hz: 20.0e6
+  # Using 51.2 MHz so that the 256-point IFFT produces exactly 200 kHz
+  # subcarrier spacing, aligning the A-DPDOA tones onto integer FFT bins.
+  sample_rate_hz: 51.2e6
 
 # -------------------------------------------------------------------
 # NOISE MODEL
