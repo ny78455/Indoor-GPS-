@@ -206,6 +206,7 @@ class IntegratedVLCLReceiver:
             normalized_symbols = equalized_symbols / np.sqrt(p_comm_safe)
             
             if led_id == 1:
+                pass
                 # print(f"DEBUG LED 1: freq={freqs[0]:.2e}, delay={delay:.2e}")
                 # print(f"DEBUG LED 1: H_n_tiled[0]={H_n_tiled[0]:.2e}")
                 # print(f"DEBUG LED 1: p_comm_tiled[0]={p_comm_tiled[0]:.2e}")
