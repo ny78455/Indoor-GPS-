@@ -205,6 +205,13 @@ class IntegratedVLCLReceiver:
             p_comm_safe = np.where(p_comm_tiled < 1e-15, 1e-15, p_comm_tiled)
             normalized_symbols = equalized_symbols / np.sqrt(p_comm_safe)
             
+            if led_id == 1:
+                print(f"DEBUG LED 1: freq={freqs[0]:.2e}, delay={delay:.2e}")
+                print(f"DEBUG LED 1: H_n_tiled[0]={H_n_tiled[0]:.2e}")
+                print(f"DEBUG LED 1: p_comm_tiled[0]={p_comm_tiled[0]:.2e}")
+                print(f"DEBUG LED 1: rx_sym[0]={rx_symbols_user[0]:.2e}, eq_sym[0]={equalized_symbols[0]:.2e}, norm_sym[0]={normalized_symbols[0]:.2e}")
+                print(f"DEBUG LED 1: rx_sym[1]={rx_symbols_user[1]:.2e}, eq_sym[1]={equalized_symbols[1]:.2e}, norm_sym[1]={normalized_symbols[1]:.2e}")
+            
             # Slice constellation and decode per subcarrier
             mod_map = orders.get(led_id, 16)
             if isinstance(mod_map, (int, float)):

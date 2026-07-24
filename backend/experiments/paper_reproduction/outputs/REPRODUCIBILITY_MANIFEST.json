@@ -1,5 +1,5 @@
 {
-  "config_hash": "fe04be6e090c751b6d413def06d12bf41dcc9737706c0aa7c39c5f96b7b943e6",
+  "config_hash": "66f31fbacd5e12b1d35894e52c3ecd6364b182a1e991b482eaaac075ade403b0",
   "environment": {
     "dependencies": {
       "PyPDF2": "3.0.1",
@@ -27,12 +27,12 @@
     "python": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]"
   },
   "experiments": [
-    "config"
+    "all"
   ],
-  "generated_at_utc": "2026-07-24T07:19:25.940330+00:00",
+  "generated_at_utc": "2026-07-24T08:27:59.570626+00:00",
   "output_hashes": {},
   "paper_identifier": "Yang et al., An Advanced Integrated Visible Light Communication and Localization System, IEEE Trans. Commun. 71(12), 2023",
-  "repository_commit": "3143804c83ed4d860120dbddb32800306607056b",
+  "repository_commit": "5d4312a3ef487af8c786e63e46e3966c6e9a2e3b",
   "seed_policy": {
     "bits": 3383956479,
     "geometry": 2138912320,

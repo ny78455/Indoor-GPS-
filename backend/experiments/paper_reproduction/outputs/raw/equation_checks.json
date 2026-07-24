@@ -1,0 +1,65 @@
+{
+  "checks": [
+    {
+      "detail": "Coherent sqrt(P) sum.",
+      "equation": "Eq. (1)",
+      "max_absolute_error": 0.0,
+      "status": "PASS"
+    },
+    {
+      "detail": "Paper square-M-QAM BER expression.",
+      "equation": "Eq. (2)",
+      "max_absolute_error": 1.3877787807814457e-17,
+      "status": "PASS"
+    },
+    {
+      "detail": "Allocated-carrier raw rate.",
+      "equation": "Eq. (3)",
+      "max_absolute_error": 0.0,
+      "status": "PASS"
+    },
+    {
+      "detail": "Known localization sine amplitude/phase.",
+      "equation": "Eq. (4)-(6)",
+      "max_absolute_error": 0.0,
+      "status": "PASS"
+    },
+    {
+      "detail": "Sum/difference multiplication identity.",
+      "equation": "Eq. (7)-(10)",
+      "max_absolute_error": 2.328692794151266e-14,
+      "status": "PASS"
+    },
+    {
+      "detail": "I/Q and atan2 quadrant convention.",
+      "equation": "Eq. (11)-(15)",
+      "max_absolute_error": 0.0,
+      "status": "PASS"
+    },
+    {
+      "detail": "Synthetic distance-difference recovery.",
+      "equation": "Eq. (16)",
+      "max_absolute_error": 8.326672684688674e-17,
+      "status": "PASS"
+    },
+    {
+      "detail": "Threshold boundary selects a feasible modulation order.",
+      "equation": "Eq. (17)",
+      "max_absolute_error": 0.0,
+      "status": "PASS"
+    },
+    {
+      "detail": "sqrt(P) and H inverse each applied once.",
+      "equation": "Eq. (18)",
+      "max_absolute_error": 0.0,
+      "status": "PASS"
+    }
+  ],
+  "seed_policy": {
+    "bits": 3383956479,
+    "geometry": 2138912320,
+    "mobility": 1209856911,
+    "noise": 1141758034,
+    "numpy": 4052763039
+  }
+}

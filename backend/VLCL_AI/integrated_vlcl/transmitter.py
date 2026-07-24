@@ -107,7 +107,7 @@ class IntegratedVLCLTransmitter:
                     freq_grid[f_idx, self.fft_size - sc_idx] = np.conj(scaled_sym)
                     
         # Compute IFFT
-        time_frames = np.fft.ifft(freq_grid, axis=1) * self.fft_size
+        time_frames = np.fft.ifft(freq_grid, axis=1)
         time_frames_real = np.real(time_frames)
         
         # Add Cyclic Prefix

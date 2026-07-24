@@ -1,39 +1,48 @@
 # Paper Configuration Validation Report
 
-Mode: `PAPER_INFERRED`  
-Configuration hash: `fe04be6e090c751b6d413def06d12bf41dcc9737706c0aa7c39c5f96b7b943e6`  
-Status: **PASS**
+Mode: `PAPER_EXACT`  
+Configuration hash: `66f31fbacd5e12b1d35894e52c3ecd6364b182a1e991b482eaaac075ade403b0`  
+Status: **INCOMPLETE / FAIL**
 
 | Severity | Code | Configuration path | Finding |
 |---|---|---|---|
-| WARNING | REP-CFG-004 | `room.width_m` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `room.length_m` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `room.height_m` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `room.reflections` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[0].orientation` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[0].optical_power_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[0].semi_angle_deg` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[1].position_m` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[1].orientation` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[1].optical_power_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[1].semi_angle_deg` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[2].orientation` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[2].optical_power_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[2].semi_angle_deg` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[3].position_m` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[3].orientation` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `leds[3].optical_power_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `leds[3].semi_angle_deg` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `receiver.height_m` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `receiver.area_m2` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `receiver.responsivity_a_per_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `receiver.fov_deg` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `receiver.orientation` | Using documented PAPER_INFERRED. |
-| WARNING | REP-CFG-004 | `communication.cyclic_prefix_ratio` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `localization.sample_rate_hz` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `power.total_budget_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `power.per_led_max_w` | Using documented SIMULATION_ASSUMPTION. |
-| WARNING | REP-CFG-004 | `power.localization_reserve_w` | Using documented PAPER_INFERRED. |
+| ERROR | REP-CFG-001 | `room.width_m` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-001 | `room.length_m` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-001 | `room.height_m` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-001 | `receiver.height_m` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-001 | `receiver.area_m2` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-001 | `receiver.responsivity_a_per_w` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-001 | `receiver.fov_deg` | Required value is absent; exact reproduction is not supportable. |
+| ERROR | REP-CFG-003 | `room.width_m` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `room.length_m` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `room.height_m` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `room.reflections` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[0].orientation` | PAPER_INFERRED is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[0].optical_power_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[0].semi_angle_deg` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[1].position_m` | PAPER_AMBIGUITY is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[1].orientation` | PAPER_INFERRED is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[1].optical_power_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[1].semi_angle_deg` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[2].orientation` | PAPER_INFERRED is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[2].optical_power_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[2].semi_angle_deg` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[3].position_m` | PAPER_AMBIGUITY is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[3].orientation` | PAPER_INFERRED is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[3].optical_power_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `leds[3].semi_angle_deg` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `receiver.height_m` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `receiver.area_m2` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `receiver.responsivity_a_per_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `receiver.fov_deg` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `receiver.orientation` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `communication.cyclic_prefix_ratio` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `localization.sample_rate_hz` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `power.total_budget_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `power.per_led_max_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-003 | `power.localization_reserve_w` | UNKNOWN is not allowed in PAPER_EXACT. |
+| ERROR | REP-CFG-012 | `leds[1].position_m` | LED position must be a three-element coordinate in metres. |
+| ERROR | REP-CFG-012 | `leds[3].position_m` | LED position must be a three-element coordinate in metres. |
 | WARNING | REP-CFG-023 | `communication.modulation_orders` | Analytical BER oracle has no square-QAM implementation for [8, 32]. |
 
 ## Interpretation

@@ -89,6 +89,12 @@ communication:
   ifft_size: 256             # [PAPER-Sec.IV] N = 256
   modulation_bandwidth_hz: 20.0e6  # [PAPER-Sec.IV] 20 MHz
   ber_threshold: 3.8e-3     # [PAPER-Sec.IV] maximum BER target
+  
+  dc_bias_sigma: 5.0
+  clipping:
+    enabled: true
+    min_value: 0.0
+    max_value: 20.0
 
   # [PAPER-Sec.IV] Modulation orders available for adaptive loading.
   # Paper uses M ∈ {2, 4, 8, 16, 32, 64} (Section IV Table).

@@ -11,9 +11,9 @@ class DCOOFDM:
     
     def __init__(
         self,
-        dc_bias_sigma: float = 3.0,
+        dc_bias_sigma: float = 5.0,
         min_drive_current: float = 0.0,   # Minimum current below which LED turns off (clips)
-        max_drive_current: float = 2.0,   # Maximum linear current (saturation)
+        max_drive_current: float = 20.0,  # Maximum linear current (saturation)
         enabled: bool = True
     ):
         self.dc_bias_sigma = dc_bias_sigma
@@ -42,6 +42,8 @@ class DCOOFDM:
         std_ac = np.std(bipolar_signal)
         if std_ac == 0:
             std_ac = 1e-9
+            
+        print(f"DEBUG DCO: min_sig={np.min(bipolar_signal):.2f}, max_sig={np.max(bipolar_signal):.2f}, std={std_ac:.2f}, limit_min={self.min_drive_current}, limit_max={self.max_drive_current}")
             
         # 1. Compute and apply DC bias
         # Bias is proportional to standard deviation: B_DC = k * std
