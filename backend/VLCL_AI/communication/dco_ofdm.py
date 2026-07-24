@@ -43,7 +43,7 @@ class DCOOFDM:
         if std_ac == 0:
             std_ac = 1e-9
             
-        print(f"DEBUG DCO: min_sig={np.min(bipolar_signal):.2f}, max_sig={np.max(bipolar_signal):.2f}, std={std_ac:.2f}, limit_min={self.min_drive_current}, limit_max={self.max_drive_current}")
+        # print(f"DEBUG DCO: min_sig={np.min(bipolar_signal):.2f}, max_sig={np.max(bipolar_signal):.2f}, std={std_ac:.2f}, limit_min={self.min_drive_current}, limit_max={self.max_drive_current}")
             
         # 1. Compute and apply DC bias
         # Bias is proportional to standard deviation: B_DC = k * std

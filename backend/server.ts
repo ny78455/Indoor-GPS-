@@ -396,7 +396,9 @@ print(json.dumps(comm_state.to_summary_dict()))
           return res.status(500).json({ error: stderr || error.message });
         }
         try {
-          const result = JSON.parse(stdout.trim());
+          const outStr = stdout.trim();
+          const jsonStr = outStr.substring(outStr.indexOf('{'));
+          const result = JSON.parse(jsonStr);
           res.json({ success: true, communication: result });
         } catch {
           res.status(500).json({ error: "Failed to parse communication output", raw: stdout });
@@ -895,7 +897,9 @@ except Exception as e:
           return res.status(500).json({ error: stderr || error.message });
         }
         try {
-          const result = JSON.parse(stdout.trim());
+          const outStr = stdout.trim();
+          const jsonStr = outStr.substring(outStr.indexOf('{'));
+          const result = JSON.parse(jsonStr);
           if (result.__error__) {
             return res.status(500).json({ error: result.__error__, traceback: result.__traceback__ });
           }
